@@ -44,8 +44,11 @@ public class EnrollmentService {
         PlatformUser student = platformUserRepository.findByEmailIgnoreCase(normalizedEmail)
                 .orElseGet(() -> createStudent(request, normalizedEmail));
 
-        student.setFullName(request.fullName().trim());
-        student.setLocale(request.locale().trim());
+        if (student.getPasswordHash() == null || student.getPasswordHash().isBlank()) {
+            student.setFullName(request.fullName().trim());
+            student.setLocale(request.locale().trim());
+        }
+
         platformUserRepository.save(student);
 
         if (enrollmentRepository.existsByCourse_IdAndStudent_Id(course.getId(), student.getId())) {

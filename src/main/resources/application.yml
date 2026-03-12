@@ -29,4 +29,10 @@ server:
 
 app:
   cors:
-    allowed-origins: http://localhost:3000,http://localhost:5173
+    allowed-origins:
+      - http://localhost:3000
+      - http://localhost:5173
+  security:
+    jwt:
+      secret: "c3VwZXItc2VjcmV0LWtleS1mb3ItbG9jYWwtZGV2LW9ubHk="
+      expiration: 86400000
