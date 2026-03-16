@@ -20,5 +20,8 @@ public interface EnrollmentRepository extends JpaRepository<Enrollment, Long> {
     @EntityGraph(attributePaths = {"course", "student"})
     List<Enrollment> findByStudent_EmailIgnoreCaseOrderByEnrolledAtDesc(String email);
 
+    @EntityGraph(attributePaths = {"course", "student"})
+    List<Enrollment> findByCourse_SlugAndStudent_EmailIgnoreCaseOrderByEnrolledAtDesc(String courseSlug, String email);
+
     Optional<Enrollment> findByCourse_IdAndStudent_Id(Long courseId, Long studentId);
 }

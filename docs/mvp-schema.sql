@@ -33,6 +33,8 @@ CREATE TABLE platform_users (
     full_name VARCHAR(120) NOT NULL,
     email VARCHAR(180) NOT NULL UNIQUE,
     locale VARCHAR(20) NOT NULL,
+    role VARCHAR(20),
+    password_hash VARCHAR(255),
     created_at TIMESTAMP NOT NULL,
     updated_at TIMESTAMP NOT NULL
 );

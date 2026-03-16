@@ -3,8 +3,10 @@ package kz.skills.elearning.controller;
 import jakarta.validation.Valid;
 import kz.skills.elearning.dto.EnrollmentRequest;
 import kz.skills.elearning.dto.EnrollmentResponse;
+import kz.skills.elearning.security.PlatformUserPrincipal;
 import kz.skills.elearning.service.EnrollmentService;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -34,8 +36,9 @@ public class EnrollmentController {
     @GetMapping
     public List<EnrollmentResponse> getEnrollments(
             @RequestParam(required = false) String courseSlug,
-            @RequestParam(required = false) String email
+            @RequestParam(required = false) String email,
+            @AuthenticationPrincipal PlatformUserPrincipal principal
     ) {
-        return enrollmentService.getEnrollments(courseSlug, email);
+        return enrollmentService.getEnrollments(courseSlug, email, principal);
     }
 }

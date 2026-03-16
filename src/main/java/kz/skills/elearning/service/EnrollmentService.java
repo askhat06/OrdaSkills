@@ -6,17 +6,21 @@ import kz.skills.elearning.entity.Course;
 import kz.skills.elearning.entity.Enrollment;
 import kz.skills.elearning.entity.EnrollmentStatus;
 import kz.skills.elearning.entity.PlatformUser;
+import kz.skills.elearning.entity.UserRole;
 import kz.skills.elearning.exception.DuplicateEnrollmentException;
 import kz.skills.elearning.exception.ResourceNotFoundException;
 import kz.skills.elearning.repository.CourseRepository;
 import kz.skills.elearning.repository.EnrollmentRepository;
 import kz.skills.elearning.repository.PlatformUserRepository;
+import kz.skills.elearning.security.PlatformUserPrincipal;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.security.access.AccessDeniedException;
 
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Locale;
+import java.time.ZoneOffset;
 
 @Service
 @Transactional
@@ -42,36 +46,78 @@ public class EnrollmentService {
 
         String normalizedEmail = normalizeEmail(request.email());
         PlatformUser student = platformUserRepository.findByEmailIgnoreCase(normalizedEmail)
-                .orElseGet(() -> createStudent(request, normalizedEmail));
+                .orElse(null);
 
-        if (student.getPasswordHash() == null || student.getPasswordHash().isBlank()) {
+        if (student != null && enrollmentRepository.existsByCourse_IdAndStudent_Id(course.getId(), student.getId())) {
+            throw new DuplicateEnrollmentException(
+                    "Student already enrolled in course: " + course.getSlug());
+        }
+
+        if (student == null) {
+            student = createStudent(request, normalizedEmail);
+        } else if (student.getPasswordHash() == null || student.getPasswordHash().isBlank()) {
             student.setFullName(request.fullName().trim());
             student.setLocale(request.locale().trim());
         }
 
-        platformUserRepository.save(student);
-
-        if (enrollmentRepository.existsByCourse_IdAndStudent_Id(course.getId(), student.getId())) {
-            throw new DuplicateEnrollmentException(
-                    "Student already enrolled in course: " + course.getSlug());
+        if (student.getId() == null || student.getPasswordHash() == null || student.getPasswordHash().isBlank()) {
+            student = platformUserRepository.save(student);
         }
 
         Enrollment enrollment = new Enrollment();
         enrollment.setCourse(course);
         enrollment.setStudent(student);
         enrollment.setStatus(EnrollmentStatus.ENROLLED);
-        enrollment.setEnrolledAt(LocalDateTime.now());
+        enrollment.setEnrolledAt(LocalDateTime.now(ZoneOffset.UTC));
 
         Enrollment saved = enrollmentRepository.save(enrollment);
         return toResponse(saved);
     }
 
-    public List<EnrollmentResponse> getEnrollments(String courseSlug, String email) {
+    @Transactional(readOnly = true)
+    public List<EnrollmentResponse> getEnrollments(String courseSlug, String email, PlatformUserPrincipal principal) {
+        if (principal == null) {
+            throw new AccessDeniedException("Authentication required");
+        }
+
+        if (principal.getRole() == UserRole.ADMIN) {
+            return getEnrollmentsForAdmin(courseSlug, email);
+        }
+
+        String normalizedPrincipalEmail = normalizeEmail(principal.getUsername());
+        if (email != null && !email.isBlank() && !normalizedPrincipalEmail.equals(normalizeEmail(email))) {
+            throw new AccessDeniedException("Students can only view their own enrollments");
+        }
+
+        List<Enrollment> enrollments;
+        if (courseSlug != null && !courseSlug.isBlank()) {
+            enrollments = enrollmentRepository.findByCourse_SlugAndStudent_EmailIgnoreCaseOrderByEnrolledAtDesc(
+                    courseSlug.trim(),
+                    normalizedPrincipalEmail
+            );
+        } else {
+            enrollments = enrollmentRepository.findByStudent_EmailIgnoreCaseOrderByEnrolledAtDesc(normalizedPrincipalEmail);
+        }
+
+        return enrollments.stream()
+                .map(this::toResponse)
+                .toList();
+    }
+
+    private List<EnrollmentResponse> getEnrollmentsForAdmin(String courseSlug, String email) {
         List<Enrollment> enrollments;
 
-        if (courseSlug != null && !courseSlug.isBlank()) {
+        boolean hasCourseFilter = courseSlug != null && !courseSlug.isBlank();
+        boolean hasEmailFilter = email != null && !email.isBlank();
+
+        if (hasCourseFilter && hasEmailFilter) {
+            enrollments = enrollmentRepository.findByCourse_SlugAndStudent_EmailIgnoreCaseOrderByEnrolledAtDesc(
+                    courseSlug.trim(),
+                    normalizeEmail(email)
+            );
+        } else if (hasCourseFilter) {
             enrollments = enrollmentRepository.findByCourse_SlugOrderByEnrolledAtDesc(courseSlug.trim());
-        } else if (email != null && !email.isBlank()) {
+        } else if (hasEmailFilter) {
             enrollments = enrollmentRepository.findByStudent_EmailIgnoreCaseOrderByEnrolledAtDesc(normalizeEmail(email));
         } else {
             enrollments = enrollmentRepository.findAllByOrderByEnrolledAtDesc();

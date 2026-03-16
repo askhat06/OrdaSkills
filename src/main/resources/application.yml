@@ -35,4 +35,4 @@ app:
   security:
     jwt:
       secret: "c3VwZXItc2VjcmV0LWtleS1mb3ItbG9jYWwtZGV2LW9ubHk="
-      expiration: 86400000
+      expiration: 24h
