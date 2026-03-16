@@ -8,6 +8,7 @@ Java Spring Boot backend for the Kazakhstan skills-development MVP.
 - Course landing page endpoint
 - Enrollment API with validation and DB persistence
 - Lesson viewer endpoint
+- JWT-based registration, login, and current-user endpoint
 - H2 in-memory database for demoing enrollment records
 - Seeded course and lessons so the frontend has data immediately
 
@@ -18,7 +19,10 @@ Java Spring Boot backend for the Kazakhstan skills-development MVP.
 - Spring Web
 - Spring Data JPA
 - Bean Validation
+- Spring Security
+- JWT (JJWT)
 - H2 database
+- PostgreSQL profile for persistent storage
 
 ## Main data model
 
@@ -33,6 +37,37 @@ Java Spring Boot backend for the Kazakhstan skills-development MVP.
 
 `GET /api/courses`
 
+### 0) Health check
+
+`GET /api/health`
+
+### Auth
+
+#### Register
+
+`POST /api/auth/register`
+
+Example:
+
+```bash
+curl -X POST http://localhost:7777/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "fullName": "Test Student",
+    "email": "test.student@example.com",
+    "password": "Password123!",
+    "locale": "en-KZ"
+  }'
+```
+
+#### Login
+
+`POST /api/auth/login`
+
+#### Current user
+
+`GET /api/auth/me`
+
 ### 2) Course landing page
 
 `GET /api/courses/{slug}`
@@ -40,7 +75,7 @@ Java Spring Boot backend for the Kazakhstan skills-development MVP.
 Example:
 
 ```bash
-curl http://localhost:8080/api/courses/digital-skills-kz
+curl http://localhost:7777/api/courses/digital-skills-kz
 ```
 
 ### 3) Lesson viewer
@@ -50,7 +85,7 @@ curl http://localhost:8080/api/courses/digital-skills-kz
 Example:
 
 ```bash
-curl http://localhost:8080/api/courses/digital-skills-kz/lessons/intro-to-digital-skills
+curl http://localhost:7777/api/courses/digital-skills-kz/lessons/intro-to-digital-skills
 ```
 
 ### 4) Enrollment API
@@ -60,7 +95,7 @@ curl http://localhost:8080/api/courses/digital-skills-kz/lessons/intro-to-digita
 Example:
 
 ```bash
-curl -X POST http://localhost:8080/api/enrollments \
+curl -X POST http://localhost:7777/api/enrollments \
   -H "Content-Type: application/json" \
   -d '{
     "courseSlug": "digital-skills-kz",
@@ -74,18 +109,22 @@ curl -X POST http://localhost:8080/api/enrollments \
 
 `GET /api/enrollments`
 
-Optional filters:
+Authentication required. Students can view only their own enrollments. Admins can view all enrollments and use filters.
+
+Optional admin filters:
 
 - `GET /api/enrollments?courseSlug=digital-skills-kz`
 - `GET /api/enrollments?email=test.student@example.com`
+- `GET /api/enrollments?courseSlug=digital-skills-kz&email=test.student@example.com`
 
 ## Demo flow
 
 1. Open the course landing page endpoint.
 2. Submit the enrollment request for a test student.
-3. Open the lesson viewer endpoint.
-4. Show the saved enrollment with `GET /api/enrollments`.
-5. Optionally open H2 Console at `http://localhost:8080/h2-console`.
+3. Register or log in to obtain a JWT.
+4. Open the lesson viewer endpoint.
+5. Show the saved enrollment with authenticated `GET /api/enrollments`.
+6. Optionally open H2 Console at `http://localhost:7777/h2-console`.
 
 H2 connection values:
 
@@ -112,12 +151,20 @@ Or run with Maven installed globally:
 mvn spring-boot:run
 ```
 
-## Notes for ISC-2 continuation
+Default local URL:
 
-Natural next additions:
+- `http://localhost:7777`
+
+## Current implementation notes
+
+- The app uses a seeded course so the demo works on first start.
+- JWT expiration is configured via `app.security.jwt.expiration` and defaults to `24h`.
+- Anonymous enrollment can create a user shell that is later upgraded during registration with the same email.
+
+## Natural next additions
 
 - progress tracking table and endpoints
 - localized lesson content per language
 - quiz / assessment entities and submission APIs
 - instructor CRUD tools for courses and lessons
-- authentication and role-based access
+- stronger production hardening for secrets, H2 console exposure, and deployment automation

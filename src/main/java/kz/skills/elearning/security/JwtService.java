@@ -1,5 +1,6 @@
 package kz.skills.elearning.security;
 
+import java.time.Duration;
 import java.util.Date;
 
 import io.jsonwebtoken.Claims;
@@ -19,8 +20,8 @@ public class JwtService {
     @Value("${app.security.jwt.secret}")
     private String jwtSecret;
 
-    @Value("${app.security.jwt.expiration-minutes:60}")
-    private long expirationMinutes;
+    @Value("${app.security.jwt.expiration:PT24H}")
+    private Duration expiration;
 
     private SecretKey secretKey;
 
@@ -32,7 +33,7 @@ public class JwtService {
 
     public String generateToken(PlatformUserPrincipal principal) {
         Date now = new Date();
-        Date expiresAt = new Date(now.getTime() + expirationMinutes * 60_000);
+        Date expiresAt = new Date(now.getTime() + expiration.toMillis());
 
         return Jwts.builder()
                 .subject(principal.getUsername())
@@ -55,7 +56,7 @@ public class JwtService {
     }
 
     public long getExpirationSeconds() {
-        return expirationMinutes * 60;
+        return expiration.toSeconds();
     }
 
     private Jws<Claims> parseSignedClaims(String token) {
