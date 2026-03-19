@@ -1,0 +1,10 @@
+spring:
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+app:
+  security:
+    jwt:
+      secret: ${APP_SECURITY_JWT_SECRET_LOCAL:c3VwZXItc2VjcmV0LWtleS1mb3ItbG9jYWwtZGV2LW9ubHk=}

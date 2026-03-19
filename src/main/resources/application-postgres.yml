@@ -2,11 +2,12 @@ spring:
   datasource:
     url: ${POSTGRES_URL:jdbc:postgresql://localhost:5432/elearning}
     username: ${POSTGRES_USER:postgres}
-    password: ${POSTGRES_PASSWORD:postgres}
+    password: ${POSTGRES_PASSWORD:As-49510}
     driver-class-name: org.postgresql.Driver
   jpa:
-    hibernate:
-      ddl-auto: update
     show-sql: true
 
-# Add org.postgresql:postgresql as a runtime dependency before using this profile.
+app:
+  security:
+    jwt:
+      secret: ${APP_SECURITY_JWT_SECRET_POSTGRES:c3VwZXItc2VjcmV0LWtleS1mb3ItcG9zdGdyZXMtbG9jYWwtZGV2}

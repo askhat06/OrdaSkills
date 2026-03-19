@@ -11,6 +11,8 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 
+import java.time.LocalDateTime;
+
 @Entity
 @Table(name = "lessons", uniqueConstraints = {
         @UniqueConstraint(name = "uk_lessons_slug_per_course", columnNames = {"course_id", "slug"})
@@ -39,6 +41,19 @@ public class Lesson extends BaseEntity {
 
     @Column(length = 400)
     private String videoUrl;
+
+    @Column(length = 500)
+    private String videoStorageKey;
+
+    @Column(length = 255)
+    private String videoOriginalFilename;
+
+    @Column(length = 120)
+    private String videoContentType;
+
+    private Long videoSizeBytes;
+
+    private LocalDateTime videoUploadedAt;
 
     @Column(nullable = false)
     private Integer position;
@@ -99,6 +114,46 @@ public class Lesson extends BaseEntity {
 
     public void setVideoUrl(String videoUrl) {
         this.videoUrl = videoUrl;
+    }
+
+    public String getVideoStorageKey() {
+        return videoStorageKey;
+    }
+
+    public void setVideoStorageKey(String videoStorageKey) {
+        this.videoStorageKey = videoStorageKey;
+    }
+
+    public String getVideoOriginalFilename() {
+        return videoOriginalFilename;
+    }
+
+    public void setVideoOriginalFilename(String videoOriginalFilename) {
+        this.videoOriginalFilename = videoOriginalFilename;
+    }
+
+    public String getVideoContentType() {
+        return videoContentType;
+    }
+
+    public void setVideoContentType(String videoContentType) {
+        this.videoContentType = videoContentType;
+    }
+
+    public Long getVideoSizeBytes() {
+        return videoSizeBytes;
+    }
+
+    public void setVideoSizeBytes(Long videoSizeBytes) {
+        this.videoSizeBytes = videoSizeBytes;
+    }
+
+    public LocalDateTime getVideoUploadedAt() {
+        return videoUploadedAt;
+    }
+
+    public void setVideoUploadedAt(LocalDateTime videoUploadedAt) {
+        this.videoUploadedAt = videoUploadedAt;
     }
 
     public Integer getPosition() {

@@ -3,8 +3,8 @@
 ## Snapshot
 
 - Repository: `elearning-backend`
-- Audit date: `2026-03-14`
-- Runtime status: `mvn test` passes with 6 tests; Spring context starts successfully with H2
+- Audit date: `2026-03-16`
+- Runtime status: `mvn test` passes with 9 tests; Spring context starts successfully with H2 and with the `prod+postgres` profile combination
 - Architectural style: layered monolith with REST controllers, service layer, Spring Data JPA repositories, and JWT-based stateless security
 
 ## The Essence
@@ -167,8 +167,11 @@ erDiagram
 | `src/main/java/kz/skills/elearning/ElearningBackendApplication.java` | Spring Boot entry point | `SpringApplication.run(...)` | Standard single-module bootstrapping |
 | `src/main/java/kz/skills/elearning/config/SecurityConfig.java` | HTTP security rules | Stateless session policy, route authorization, JWT filter registration, password encoder, `AuthenticationManager` bean, consistent `401` JSON payload | Keeps all security wiring centralized and explicit |
 | `src/main/java/kz/skills/elearning/config/WebConfig.java` | CORS setup | Allows configured local frontend origins on `/api/**` | Lightweight frontend enablement for local MVP integration |
-| `src/main/resources/application.yml` | Default runtime config | H2 datasource, Hibernate auto-update, H2 console, server port `7777`, JWT secret, CORS | Optimized for local startup with zero external infra |
+| `src/main/resources/application.yml` | Shared runtime config | Default `local` profile, H2 datasource, Flyway-backed schema validation, server port `7777`, JWT duration, CORS, `prod -> postgres` profile group | Keeps local startup simple while separating environment-sensitive settings |
+| `src/main/resources/application-local.yml` | Local-only runtime config | H2 console and local JWT secret fallback | Supports one-command local startup without leaking production defaults into shared config |
+| `src/main/resources/application-prod.yml` | Production-only runtime config | H2 console disabled, JWT secret required from environment | Establishes a safer baseline for non-local deployments |
 | `src/main/resources/application-postgres.yml` | Alternate DB profile | PostgreSQL datasource via env vars | Simple path to move from in-memory demo DB to persistent DB |
+| `src/main/resources/db/migration/V1__init_schema.sql` | Canonical schema bootstrap | Creates the four core tables and constraints | Moves schema ownership from Hibernate mutation to versioned migrations |
 
 ### Controllers
 
@@ -301,12 +304,15 @@ Default profile:
 
 - H2 in-memory
 - JDBC URL: `jdbc:h2:mem:elearningdb;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE`
-- Hibernate DDL mode: `update`
-- H2 console enabled at `/h2-console`
+- default Spring profile: `local`
+- Hibernate DDL mode: `validate`
+- Flyway owns schema creation
+- H2 console enabled at `/h2-console` only in `local`
 
 Alternate profile:
 
 - PostgreSQL
+- profile activation: `prod` also enables `postgres`
 - Config file: `application-postgres.yml`
 - Expected env vars: `POSTGRES_URL`, `POSTGRES_USER`, `POSTGRES_PASSWORD`
 
@@ -314,8 +320,8 @@ Alternate profile:
 
 - Stateless JWT auth
 - BCrypt password hashing
-- Public H2 console
-- Default JWT secret committed in config
+- `APP_SECURITY_JWT_SECRET` required for `prod`
+- local fallback secret isolated to `application-local.yml`
 
 ### CORS
 
@@ -332,7 +338,6 @@ No CI/CD configuration was found:
 - no GitLab CI
 - no Dockerfile
 - no Docker Compose
-- no migration tooling such as Flyway or Liquibase
 
 Implication:
 
@@ -345,9 +350,9 @@ Implication:
 
 - `mvn test` succeeds
 - Spring Boot context starts
-- Hibernate creates four core tables
+- Flyway applies the initial schema migration
 - `DataSeeder` inserts one seeded course with two seeded lessons
-- There are 6 automated tests: 1 context smoke test and 5 API integration tests
+- There are 9 automated tests: 1 context smoke test, 7 API integration tests, and 1 `prod+postgres` profile startup test
 
 ### Effective runtime behavior inferred from code and build
 
@@ -358,6 +363,8 @@ Implication:
 - Admins can filter enrollments by `courseSlug`, `email`, or both
 - Authentication and roles are implemented and documented
 - Security-generated `401` and application-generated `4xx/5xx` errors now share the same JSON envelope
+- H2 console is available only in `local`
+- Shared config no longer commits a production JWT secret
 
 ## Resolved Since Initial Audit
 
@@ -370,6 +377,7 @@ The first audit found several code/documentation mismatches. They have now been 
 | Auth feature maturity | Docs treated auth as future work | Docs now describe JWT auth, login, and `me` endpoint |
 | JWT expiration config | Property name and code disagreed | `JwtService` now reads the duration-based `app.security.jwt.expiration` property |
 | SQL schema doc | `docs/mvp-schema.sql` missed `password_hash` and `role` | Schema doc now includes both fields |
+| Schema ownership | Hibernate mutated schema directly | Flyway migration now owns initial schema creation |
 
 Conclusion:
 
@@ -386,14 +394,14 @@ Conclusion:
 
 ### Main technical debt / weak spots
 
-1. Security hardening is incomplete
-   H2 console is public, JWT secret is committed, and there is no environment-specific production hardening.
+1. Security hardening is improved but not complete
+   JWT secret is now externalized for `prod` and H2 console is local-only, but there is still no secret rotation strategy, no HTTPS/TLS story, and no environment-specific deployment template.
 
 2. Test coverage is better but still limited
-   There are now integration tests for the main auth/enrollment flows, but not for catalog edge cases, validation matrices, or repository-specific performance behavior.
+   There are now integration tests for auth/enrollment flows, public/protected route regression, and `prod+postgres` startup, but not for catalog edge cases, validation matrices, or repository-specific performance behavior.
 
-3. No migration strategy
-   Hibernate `ddl-auto: update` is the schema mechanism. This is fine for MVP demos, risky for shared or production environments.
+3. Migration strategy exists but is minimal
+   Flyway owns the initial schema, but there is only one baseline migration and no process yet for evolving production data safely across multiple versions.
 
 4. Mixed user lifecycle in one table
    `PlatformUser` represents both pre-registration leads and fully authenticated accounts.
@@ -422,10 +430,10 @@ Conclusion:
    - either formalize lead/account states in `PlatformUser`,
    - or separate lead capture from registered identity if product complexity grows.
 
-4. Harden production security:
-   - externalize JWT secret,
-   - restrict H2 console to local/dev only,
-   - introduce environment-specific profiles.
+4. Harden production security further:
+   - add deployment-time validation for required secrets,
+   - disable or narrow SQL logging outside local,
+   - document the expected prod env vars and profile usage.
 
 5. Decide target architecture before scaling:
    - if adding quizzes, progress, instructor tooling, and admin moderation, keep layered monolith but introduce clearer bounded modules.

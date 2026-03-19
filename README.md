@@ -21,6 +21,7 @@ Java Spring Boot backend for the Kazakhstan skills-development MVP.
 - Bean Validation
 - Spring Security
 - JWT (JJWT)
+- Flyway
 - H2 database
 - PostgreSQL profile for persistent storage
 
@@ -155,11 +156,28 @@ Default local URL:
 
 - `http://localhost:7777`
 
+Profiles:
+
+- default profile: `local`
+- production profile group: `prod` which also activates `postgres`
+
+JWT configuration:
+
+- local/dev fallback secret comes from `APP_SECURITY_JWT_SECRET_LOCAL`
+- production secret must come from `APP_SECURITY_JWT_SECRET`
+- token lifetime is configured via `app.security.jwt.expiration`
+
+Database schema:
+
+- schema is managed by Flyway migrations in `src/main/resources/db/migration`
+- JPA now validates the schema instead of mutating it automatically
+
 ## Current implementation notes
 
 - The app uses a seeded course so the demo works on first start.
 - JWT expiration is configured via `app.security.jwt.expiration` and defaults to `24h`.
 - Anonymous enrollment can create a user shell that is later upgraded during registration with the same email.
+- H2 console is available only in the `local` profile.
 
 ## Natural next additions
 

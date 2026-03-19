@@ -1,0 +1,9 @@
+spring:
+  h2:
+    console:
+      enabled: false
+
+app:
+  security:
+    jwt:
+      secret: ${APP_SECURITY_JWT_SECRET}
