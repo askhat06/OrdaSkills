@@ -12,6 +12,6 @@ public class AppInfoController {
 
     @GetMapping("/health")
     public Map<String, String> health() {
-        return Map.of("status", "UP", "service", "elearning-backend");
+        return Map.of("status", "ok", "service", "elearning-backend");
     }
 }

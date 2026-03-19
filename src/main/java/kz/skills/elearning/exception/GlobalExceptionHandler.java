@@ -22,9 +22,19 @@ public class GlobalExceptionHandler {
         return buildResponse(HttpStatus.NOT_FOUND, ex.getMessage(), Map.of());
     }
 
+    @ExceptionHandler(BadRequestException.class)
+    public ResponseEntity<ApiErrorResponse> handleBadRequest(BadRequestException ex) {
+        return buildResponse(HttpStatus.BAD_REQUEST, ex.getMessage(), Map.of());
+    }
+
     @ExceptionHandler(DuplicateEnrollmentException.class)
     public ResponseEntity<ApiErrorResponse> handleConflict(DuplicateEnrollmentException ex) {
         return buildResponse(HttpStatus.CONFLICT, ex.getMessage(), Map.of());
+    }
+
+    @ExceptionHandler(VideoUploadException.class)
+    public ResponseEntity<ApiErrorResponse> handleVideoUpload(VideoUploadException ex) {
+        return buildResponse(HttpStatus.BAD_REQUEST, ex.getMessage(), Map.of());
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
