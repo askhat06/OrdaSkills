@@ -9,7 +9,14 @@ import org.springframework.test.context.ActiveProfiles;
         "spring.datasource.driver-class-name=org.h2.Driver",
         "spring.datasource.username=postgres",
         "spring.datasource.password=As-49510",
-        "app.security.jwt.secret=c3VwZXItc2VjcmV0LWtleS1mb3ItcG9zdGdyZXMtdGVzdHM="
+        "app.security.jwt.secret=c3VwZXItc2VjcmV0LWtleS1mb3ItcG9zdGdyZXMtdGVzdHM=",
+        "app.media.video.provider=in-memory",
+        "app.media.video.bucket=test-bucket",
+        "app.media.video.endpoint=https://storage.example.test",
+        "app.media.video.public-base-url=https://cdn.example.test/videos",
+        "app.media.video.access-key=test-access",
+        "app.media.video.secret-key=test-secret",
+        "app.media.video.region=us-east-1"
 })
 @ActiveProfiles("prod")
 class PostgresProfileStartupTests {
