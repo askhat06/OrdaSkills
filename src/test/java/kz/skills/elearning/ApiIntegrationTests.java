@@ -2,9 +2,11 @@ package kz.skills.elearning;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import kz.skills.elearning.entity.Course;
 import kz.skills.elearning.entity.Lesson;
 import kz.skills.elearning.entity.PlatformUser;
 import kz.skills.elearning.entity.UserRole;
+import kz.skills.elearning.repository.CourseRepository;
 import kz.skills.elearning.repository.LessonRepository;
 import kz.skills.elearning.repository.PlatformUserRepository;
 import kz.skills.elearning.service.video.InMemoryVideoStorageService;
@@ -26,6 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -37,7 +40,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "app.security.jwt.secret=c3VwZXItc2VjcmV0LWtleS1mb3ItaW50ZWdyYXRpb24tdGVzdHM=",
         "app.media.video.provider=in-memory",
         "app.media.video.public-base-url=https://cdn.example.test/videos",
-        "app.media.video.max-file-size-bytes=2048"
+        "app.media.video.max-file-size-bytes=2048",
+        "app.security.rate-limit.enabled=false"
 })
 @AutoConfigureMockMvc
 @Transactional
@@ -55,6 +59,9 @@ class ApiIntegrationTests {
 
     @Autowired
     private PlatformUserRepository platformUserRepository;
+
+    @Autowired
+    private CourseRepository courseRepository;
 
     @Autowired
     private LessonRepository lessonRepository;
@@ -141,6 +148,20 @@ class ApiIntegrationTests {
     }
 
     @Test
+    void deletedUserTokenFallsBackToUnauthorized() throws Exception {
+        String token = registerAndGetToken("Student One", "student.one@example.com", "en-KZ");
+
+        PlatformUser user = platformUserRepository.findByEmailIgnoreCase("student.one@example.com").orElseThrow();
+        platformUserRepository.delete(user);
+        platformUserRepository.flush();
+
+        mockMvc.perform(get("/api/auth/me")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("Authentication required"));
+    }
+
+    @Test
     void studentCanSeeOnlyOwnEnrollments() throws Exception {
         createEnrollment("Student One", "student.one@example.com", "en-KZ");
         createEnrollment("Student Two", "student.two@example.com", "ru-KZ");
@@ -202,6 +223,41 @@ class ApiIntegrationTests {
         PlatformUser lead = platformUserRepository.findByEmailIgnoreCase("lead@example.com").orElseThrow();
         assertThat(lead.getFullName()).isEqualTo("Original Name");
         assertThat(lead.getLocale()).isEqualTo("en-KZ");
+    }
+
+    @Test
+    void enrollingAnotherCourseDoesNotOverwriteExistingLeadProfile() throws Exception {
+        createEnrollment("Original Name", "lead@example.com", "en-KZ");
+        createCourse("career-boost-kz", "Career Boost Kazakhstan");
+
+        mockMvc.perform(post("/api/enrollments")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of(
+                                "courseSlug", "career-boost-kz",
+                                "fullName", "Mutated Name",
+                                "email", "lead@example.com",
+                                "locale", "ru-KZ"
+                        ))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.courseSlug").value("career-boost-kz"));
+
+        PlatformUser lead = platformUserRepository.findByEmailIgnoreCase("lead@example.com").orElseThrow();
+        assertThat(lead.getFullName()).isEqualTo("Original Name");
+        assertThat(lead.getLocale()).isEqualTo("en-KZ");
+    }
+
+    @Test
+    void loginDoesNotRevealPasswordlessAccountState() throws Exception {
+        createEnrollment("Lead User", "lead@example.com", "en-KZ");
+
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of(
+                                "email", "lead@example.com",
+                                "password", DEFAULT_PASSWORD
+                        ))))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("Invalid email or password"));
     }
 
     @Test
@@ -354,6 +410,90 @@ class ApiIntegrationTests {
         assertThat(lesson.getVideoStorageKey()).isNull();
     }
 
+    @Test
+    void adminCanCreateUpdateAndDeleteCourse() throws Exception {
+        createAdmin("admin@example.com", "Platform Admin");
+        String adminToken = loginAndGetToken("admin@example.com", DEFAULT_PASSWORD);
+
+        MvcResult createResult = mockMvc.perform(post("/api/admin/courses")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of(
+                                "slug", "future-skills-kz",
+                                "title", "Future Skills Kazakhstan",
+                                "subtitle", "Admin managed course",
+                                "description", "A course created through admin CRUD.",
+                                "locale", "en-KZ",
+                                "instructorName", "Admin Teacher",
+                                "level", "Intermediate",
+                                "durationHours", 8
+                        ))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.slug").value("future-skills-kz"))
+                .andExpect(jsonPath("$.lessonCount").value(0))
+                .andReturn();
+
+        long courseId = objectMapper.readTree(createResult.getResponse().getContentAsString()).get("id").asLong();
+
+        mockMvc.perform(get("/api/admin/courses/{courseId}", courseId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(adminToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("Future Skills Kazakhstan"));
+
+        mockMvc.perform(put("/api/admin/courses/{courseId}", courseId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of(
+                                "slug", "future-skills-kz",
+                                "title", "Future Skills Kazakhstan Updated",
+                                "subtitle", "Updated subtitle",
+                                "description", "Updated admin course description.",
+                                "locale", "en-KZ",
+                                "instructorName", "Updated Teacher",
+                                "level", "Advanced",
+                                "durationHours", 10
+                        ))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("Future Skills Kazakhstan Updated"))
+                .andExpect(jsonPath("$.level").value("Advanced"));
+
+        mockMvc.perform(delete("/api/admin/courses/{courseId}", courseId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(adminToken)))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/api/admin/courses/{courseId}", courseId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(adminToken)))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void adminCourseCrudRequiresAdminRole() throws Exception {
+        String studentToken = registerAndGetToken("Student One", "student.one@example.com", "en-KZ");
+
+        mockMvc.perform(get("/api/admin/courses"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("Authentication required"));
+
+        mockMvc.perform(get("/api/admin/courses")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(studentToken)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value("Access denied"));
+    }
+
+    @Test
+    void deletingCourseWithEnrollmentsReturnsConflict() throws Exception {
+        createAdmin("admin@example.com", "Platform Admin");
+        String adminToken = loginAndGetToken("admin@example.com", DEFAULT_PASSWORD);
+        createEnrollment("Student One", "student.one@example.com", "en-KZ");
+
+        Long courseId = courseRepository.findBySlug(COURSE_SLUG).orElseThrow().getId();
+
+        mockMvc.perform(delete("/api/admin/courses/{courseId}", courseId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(adminToken)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("Cannot delete a course that already has enrollments"));
+    }
+
     private void createEnrollment(String fullName, String email, String locale) throws Exception {
         mockMvc.perform(post("/api/enrollments")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -364,6 +504,19 @@ class ApiIntegrationTests {
                                 "locale", locale
                         ))))
                 .andExpect(status().isCreated());
+    }
+
+    private void createCourse(String slug, String title) {
+        Course course = new Course();
+        course.setSlug(slug);
+        course.setTitle(title);
+        course.setSubtitle("Extra course");
+        course.setDescription("Extra course used by integration tests.");
+        course.setLocale("en-KZ");
+        course.setInstructorName("Test Instructor");
+        course.setLevel("Beginner");
+        course.setDurationHours(4);
+        courseRepository.save(course);
     }
 
     private String registerAndGetToken(String fullName, String email, String locale) throws Exception {

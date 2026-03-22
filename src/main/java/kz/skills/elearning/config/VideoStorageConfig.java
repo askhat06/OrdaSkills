@@ -18,7 +18,7 @@ import java.net.URI;
 public class VideoStorageConfig {
 
     @Bean
-    @ConditionalOnProperty(name = "app.media.video.provider", havingValue = "s3", matchIfMissing = true)
+    @ConditionalOnProperty(name = "app.media.video.provider", havingValue = "s3")
     public S3Client s3Client(VideoStorageProperties properties) {
         return S3Client.builder()
                 .endpointOverride(URI.create(properties.getEndpoint()))
@@ -32,7 +32,7 @@ public class VideoStorageConfig {
     }
 
     @Bean
-    @ConditionalOnProperty(name = "app.media.video.provider", havingValue = "s3", matchIfMissing = true)
+    @ConditionalOnProperty(name = "app.media.video.provider", havingValue = "s3")
     public S3Presigner s3Presigner(VideoStorageProperties properties) {
         return S3Presigner.builder()
                 .endpointOverride(URI.create(properties.getEndpoint()))

@@ -1,428 +1,330 @@
-# Project Blueprint: eLearning Backend
+# Project Blueprint: Orda Skills Backend Contract Guide
 
 ## Snapshot
 
-- Repository: `elearning-backend`
-- Audit date: `2026-03-21`
-- Audit method: code inspection plus repo exploration by a delegated subagent
-- Runtime verification status: tests were not re-run from this session because Maven CLI is not installed in this workspace
-- Architectural style: layered Spring Boot monolith with JWT auth, Flyway-managed schema, and an admin-only lesson video upload subsystem
-- Current default profile: `postgres`
+- Repository in this workspace: `OrdaSkills` / `elearning-backend`
+- Repository role: backend source of truth
+- Canonical frontend: external `oyn_front` / `jiyuu` React project, not stored in this repo
+- Audit date: `2026-03-22`
+- Audit method: local backend repo inspection plus user-provided frontend architecture notes
+- Runtime verification status: no local rerun of Java or Node tooling from this session because `java`, `mvn`, `node`, and `npm` are not installed in this environment
+- Current default backend profile: `local`
 - Canonical schema source: `src/main/resources/db/migration/*.sql`
+- API contract source of truth: backend controllers, DTOs, security config, YAML profiles, and tests
+
+## Core Rule For Future AI Agents
+
+This repository is backend-only.
+
+Do not assume frontend source code lives here.
+
+If you are working on the frontend:
+
+- use this document as the backend integration guide,
+- treat the external `oyn_front` repo as the canonical frontend codebase,
+- verify frontend implementation details in that repo before editing.
 
 ## The Essence
 
-This repository is a Kazakhstan-focused e-learning backend. It still supports the original learner MVP flow, but it now also includes an admin media-management slice for lesson videos.
+Orda Skills is a Kazakhstan-focused e-learning MVP whose stable contract now lives in this Spring Boot backend.
 
-Current product shape:
+The backend currently provides:
 
-1. learners can browse a seeded course catalog,
-2. open a course landing page,
-3. enroll anonymously or as an existing user,
-4. register or log in with JWT auth,
-5. open lesson viewer pages,
-6. retrieve the current authenticated user,
-7. inspect enrollments with role-based access rules,
-8. upload, finalize, or delete lesson videos through admin-only endpoints.
+1. JWT register/login/current-user flows,
+2. public course catalog and course landing endpoints,
+3. lesson viewer payloads including `videoUrl`,
+4. public enrollment creation with lead-shell support,
+5. authenticated enrollment listing,
+6. admin course CRUD,
+7. admin lesson video upload, completion, and delete workflows.
 
-Primary stack:
+The frontend is an external concern:
 
-- Java 17 target
-- Spring Boot 3.5.11
-- Spring Web
-- Spring Data JPA + Hibernate
-- Bean Validation
-- Spring Security
-- JJWT 0.13.0
-- Flyway
-- H2 support for tests/local scenarios
-- PostgreSQL profile configuration
-- AWS SDK S3 client/presigner for S3-compatible object storage
+- the real learner-facing UI is expected to live in `oyn_front`,
+- legacy gallery/photoshoots/vacancy flows remain a frontend-side concern tied to `json-server`,
+- this repo should document frontend integration, not host the frontend itself.
 
-This is still not Clean Architecture. It is a pragmatic Spring layered backend where controllers, services, entities, repositories, security, and storage integration live in one deployable application.
+## Architecture and Integration Boundaries
 
-## High-Level Architecture
+### Backend architecture in this repo
 
-### Architectural Pattern
+The backend is a layered Spring monolith:
 
-The codebase follows a classic Spring layered monolith:
-
-- `controller` exposes HTTP endpoints
-- `service` contains business rules and DTO assembly
+- `controller` exposes HTTP routes
+- `service` applies business rules and assembles DTOs
 - `repository` handles persistence access
-- `entity` models database tables
-- `security` wires JWT authentication and principals
-- `config` centralizes security, CORS, and media-storage setup
-- `service/video` abstracts video storage behind a provider interface
-- `exception` centralizes API error translation
+- `entity` models the schema
+- `security` manages JWT auth and request filtering
+- `config` manages profiles, CORS, rate limiting, and media wiring
+- `service/video` abstracts media storage providers
+- `exception` keeps API errors consistent
 
-### Request/Data Flow
+### External frontend boundary
 
-```mermaid
-flowchart LR
-    Client["Learner / Frontend"] --> Security["Spring Security Filter Chain"]
-    Admin["Admin UI"] --> Security
-    Security -->|Public or JWT| Controller["REST Controllers"]
-    Security -->|ROLE_ADMIN| AdminController["AdminLessonVideoController"]
-    Security --> JwtFilter["JwtAuthenticationFilter"]
-    JwtFilter --> JwtService["JwtService"]
-    JwtFilter --> UserDetails["PlatformUserDetailsService"]
-    UserDetails --> UserRepo["PlatformUserRepository"]
+Based on the user-provided blueprint, the external frontend:
 
-    Controller --> Service["Application Services"]
-    Service --> Repo["JPA Repositories"]
-    Repo --> DB["Flyway schema on H2 / PostgreSQL"]
+- uses React plus Router, Redux, and Context,
+- talks to this backend on `http://localhost:7777`,
+- still talks to `json-server` on `http://localhost:3001` for legacy domains,
+- must preserve legacy domains while aligning eLearning flows to this backend contract.
 
-    AdminController --> AdminService["AdminLessonVideoService"]
-    AdminService --> LessonRepo["LessonRepository"]
-    AdminService --> PendingRepo["LessonVideoUploadRepository"]
-    AdminService --> Storage["VideoStorageService"]
-    Storage --> S3["S3-compatible storage"]
-    Storage --> Memory["InMemoryVideoStorageService (tests/dev)"]
+Important consequence:
 
-    Service --> DTO["Response DTOs"]
-    AdminService --> DTO
-    DTO --> Controller
-    DTO --> AdminController
+- when backend and frontend seem to disagree, this backend repo is the contract source of truth for eLearning behavior,
+- but frontend implementation details must still be verified in `oyn_front` before making assumptions about routing, storage, or state architecture.
 
-    Service -.throws.-> Errors["Domain / validation exceptions"]
-    AdminService -.throws.-> Errors
-    Errors --> Handler["GlobalExceptionHandler"]
-    Handler --> Client
-    Handler --> Admin
+## API Surface That Frontends Must Respect
 
-    Seeder["DataSeeder"] --> Repo
-```
-
-### Domain Model
-
-```mermaid
-erDiagram
-    COURSE ||--o{ LESSON : contains
-    COURSE ||--o{ ENROLLMENT : has
-    PLATFORM_USER ||--o{ ENROLLMENT : owns
-    LESSON ||--o| LESSON_VIDEO_UPLOAD : has_pending_upload
-
-    COURSE {
-        long id
-        string slug
-        string title
-        string locale
-        string level
-        int durationHours
-    }
-
-    LESSON {
-        long id
-        long course_id
-        string slug
-        string title
-        int position
-        int durationMinutes
-        string videoUrl
-        string videoStorageKey
-        string videoContentType
-        long videoSizeBytes
-        datetime videoUploadedAt
-    }
-
-    PLATFORM_USER {
-        long id
-        string fullName
-        string email
-        string locale
-        string role
-        string passwordHash
-    }
-
-    ENROLLMENT {
-        long id
-        long course_id
-        long student_id
-        string status
-        datetime enrolledAt
-    }
-
-    LESSON_VIDEO_UPLOAD {
-        long id
-        long lesson_id
-        string objectKey
-        string originalFilename
-        string contentType
-        long sizeBytes
-        datetime expiresAt
-    }
-```
-
-## API Surface
-
-| Route | Method | Auth | Backing controller/service | Purpose |
+| Route | Method | Auth | Purpose | Frontend handling notes |
 | --- | --- | --- | --- | --- |
-| `/api/health` | GET | Public | `AppInfoController` | Simple liveness probe |
-| `/api/auth/register` | POST | Public | `AuthController` -> `AuthService.register` | Create an account or upgrade a lead-style user shell |
-| `/api/auth/login` | POST | Public | `AuthController` -> `AuthService.login` | Return JWT access token |
-| `/api/auth/me` | GET | Authenticated | `AuthController` -> `AuthService.me` | Return current principal snapshot |
-| `/api/courses` | GET | Public | `CourseController` -> `CourseService.getCatalog` | Course catalog |
-| `/api/courses/{slug}` | GET | Public | `CourseController` -> `CourseService.getCourseLanding` | Course landing page |
-| `/api/courses/{courseSlug}/lessons/{lessonSlug}` | GET | Public | `CourseController` -> `CourseService.getLessonViewer` | Lesson viewer including `videoUrl` |
-| `/api/enrollments` | POST | Public | `EnrollmentController` -> `EnrollmentService.enroll` | Create enrollment |
-| `/api/enrollments` | GET | Authenticated | `EnrollmentController` -> `EnrollmentService.getEnrollments` | Students see only their own enrollments; admins can filter across all users |
-| `/api/admin/courses/{courseSlug}/lessons/{lessonSlug}/video-upload` | POST | Admin | `AdminLessonVideoController` -> `AdminLessonVideoService.initiateUpload` | Create a pending upload and return upload instructions |
-| `/api/admin/courses/{courseSlug}/lessons/{lessonSlug}/video-upload/complete` | POST | Admin | `AdminLessonVideoController` -> `AdminLessonVideoService.completeUpload` | Verify stored object and attach it to the lesson |
-| `/api/admin/courses/{courseSlug}/lessons/{lessonSlug}/video` | DELETE | Admin | `AdminLessonVideoController` -> `AdminLessonVideoService.deleteVideo` | Remove lesson video metadata and best-effort delete the object |
-| `/h2-console` | GET/UI | Public only when `local` enables it | Spring H2 console | Local DB inspection only |
+| `/api/health` | GET | Public | Liveness probe | Safe for lightweight connectivity checks |
+| `/api/auth/register` | POST | Public | Create account or upgrade a lead-shell user | Expect `201` with auth payload |
+| `/api/auth/login` | POST | Public | Exchange credentials for JWT | Expect generic invalid-credentials errors |
+| `/api/auth/me` | GET | Authenticated | Return current user snapshot | On `401`, clear stored token and re-auth |
+| `/api/courses` | GET | Public | Catalog listing | Use as the source of truth for course cards |
+| `/api/courses/{slug}` | GET | Public | Course landing page | Returns the syllabus/details used by landing pages |
+| `/api/courses/{courseSlug}/lessons/{lessonSlug}` | GET | Public | Lesson viewer payload | Use `videoUrl` directly for playback |
+| `/api/enrollments` | POST | Public | Create enrollment | Supports anonymous lead-shell flow |
+| `/api/enrollments` | GET | Authenticated | List enrollments | Students only see their own records |
+| `/api/admin/courses` | GET | Admin | List courses | Admin-only CRUD surface |
+| `/api/admin/courses/{courseId}` | GET | Admin | Load one course | For edit forms |
+| `/api/admin/courses` | POST | Admin | Create course | Expect validation and uniqueness errors |
+| `/api/admin/courses/{courseId}` | PUT | Admin | Update course | Same validation model as create |
+| `/api/admin/courses/{courseId}` | DELETE | Admin | Delete course if safe | Can return `409` if enrollments exist |
+| `/api/admin/courses/{courseSlug}/lessons/{lessonSlug}/video-upload` | POST | Admin | Initiate upload | Admin media workflow only |
+| `/api/admin/courses/{courseSlug}/lessons/{lessonSlug}/video-upload/complete` | POST | Admin | Complete upload | Expects existing uploaded object |
+| `/api/admin/courses/{courseSlug}/lessons/{lessonSlug}/video` | DELETE | Admin | Delete lesson video | Best-effort object cleanup |
+
+### Frontend-critical response semantics
+
+| Status | Meaning in this backend | Frontend recommendation |
+| --- | --- | --- |
+| `200` | Read success or login success | Render data or store auth payload |
+| `201` | Resource created | Show success feedback and refresh local cache |
+| `204` | Delete/complete success with no body | Do not parse JSON |
+| `400` | Validation/domain error | Surface message directly in form feedback |
+| `401` | Missing, expired, malformed, or deleted-user JWT path | Clear token/session state and redirect or prompt login |
+| `403` | Authenticated but insufficient role | Show access denied state |
+| `404` | Course, lesson, upload, or resource not found | Render not-found state |
+| `409` | Duplicate enrollment or unsafe delete | Show conflict-specific guidance |
+| `429` | Rate limit on login/register/enroll | Back off and show retry messaging |
 
 ## High-Signal File Map
 
-### Build, Bootstrap, and Config
+### Verified backend files in this repo
 
 | Path | Responsibility | Why it matters |
 | --- | --- | --- |
-| `pom.xml` | Maven build descriptor | Declares Spring Boot, Flyway, Security, JWT, PostgreSQL, H2, and AWS S3 dependencies |
-| `src/main/java/kz/skills/elearning/ElearningBackendApplication.java` | Spring Boot entry point | Single-module app bootstrap |
-| `src/main/java/kz/skills/elearning/config/SecurityConfig.java` | Route authorization and stateless auth wiring | Defines public routes, authenticated routes, and `/api/admin/**` role requirements |
-| `src/main/java/kz/skills/elearning/config/WebConfig.java` | CORS config | Allows configured frontend origins on `/api/**` |
-| `src/main/java/kz/skills/elearning/config/VideoStorageConfig.java` | S3 client/presigner bean wiring | Enables S3-compatible uploads when provider is `s3` |
-| `src/main/java/kz/skills/elearning/config/VideoStorageProperties.java` | Typed media-storage config | Governs provider, bucket, endpoint, content types, file-size cap, and presign duration |
-| `src/main/resources/application.yml` | Shared runtime config | Sets port `7777`, default profile `postgres`, base datasource, CORS, JWT expiration, and video settings |
-| `src/main/resources/application-local.yml` | Local-only config | Enables H2 console and a local JWT secret fallback |
-| `src/main/resources/application-prod.yml` | Production profile overrides | Disables H2 console and expects `APP_SECURITY_JWT_SECRET` |
-| `src/main/resources/application-postgres.yml` | PostgreSQL profile config | Supplies PostgreSQL datasource settings and a postgres-profile JWT secret fallback |
-
-### Core Learner Flow
-
-| Path | Responsibility | Why it matters |
-| --- | --- | --- |
-| `src/main/java/kz/skills/elearning/controller/AuthController.java` | Register, login, current-user endpoints | Entry point for auth lifecycle |
-| `src/main/java/kz/skills/elearning/controller/CourseController.java` | Public catalog, course, and lesson endpoints | Read APIs used by the learner-facing frontend |
-| `src/main/java/kz/skills/elearning/controller/EnrollmentController.java` | Enrollment create/list endpoints | Public enrollment plus authenticated reporting |
-| `src/main/java/kz/skills/elearning/service/AuthService.java` | Registration/login/current-user rules | Upgrades pre-existing lead users and issues JWTs |
-| `src/main/java/kz/skills/elearning/service/CourseService.java` | Catalog and lesson DTO assembly | Keeps learner read APIs stable even as `Lesson` evolves |
-| `src/main/java/kz/skills/elearning/service/EnrollmentService.java` | Enrollment creation and visibility rules | Handles duplicate prevention, role rules, and lead-shell behavior |
-| `src/main/java/kz/skills/elearning/service/DataSeeder.java` | Demo data bootstrap | Seeds `digital-skills-kz` and two lessons when the DB is empty |
-
-### Video Upload Subsystem
-
-| Path | Responsibility | Why it matters |
-| --- | --- | --- |
+| `src/main/java/kz/skills/elearning/config/SecurityConfig.java` | Route authorization and JSON `401/403` behavior | First stop for auth visibility and filter order |
+| `src/main/java/kz/skills/elearning/security/RequestRateLimitFilter.java` | Rate limiting for login/register/enrollment | Frontend must respect `429` behavior |
+| `src/main/java/kz/skills/elearning/security/JwtAuthenticationFilter.java` | JWT parsing and deleted-user handling | Invalid tokens now degrade to `401` |
+| `src/main/java/kz/skills/elearning/service/AuthService.java` | Register/login/current-user lifecycle | Defines lead upgrade and generic login errors |
+| `src/main/java/kz/skills/elearning/service/EnrollmentService.java` | Enrollment rules | Defines anonymous enrollment and non-mutation behavior |
+| `src/main/java/kz/skills/elearning/controller/AdminCourseController.java` | Admin course CRUD surface | Required backend for the CRUD module |
+| `src/main/java/kz/skills/elearning/service/AdminCourseService.java` | Slug uniqueness and delete safety | Governs `409` delete behavior |
 | `src/main/java/kz/skills/elearning/controller/AdminLessonVideoController.java` | Admin media endpoints | Entry point for upload-init, upload-complete, and delete |
-| `src/main/java/kz/skills/elearning/service/AdminLessonVideoService.java` | Video upload orchestration | Validates requests, persists pending uploads, verifies stored objects, updates lessons, deletes prior objects |
-| `src/main/java/kz/skills/elearning/service/video/VideoStorageService.java` | Storage abstraction | Decouples lesson media flow from concrete storage |
-| `src/main/java/kz/skills/elearning/service/video/S3VideoStorageService.java` | S3-compatible implementation | Generates presigned PUT URLs and resolves playback URLs |
-| `src/main/java/kz/skills/elearning/service/video/InMemoryVideoStorageService.java` | In-memory implementation | Used by tests and useful for non-S3 scenarios |
-| `src/main/java/kz/skills/elearning/entity/LessonVideoUpload.java` | Pending upload persistence model | Tracks a single active pending upload per lesson |
-| `src/main/java/kz/skills/elearning/repository/LessonVideoUploadRepository.java` | Pending upload repository | Supports lookup and cleanup by lesson/object key |
+| `src/main/java/kz/skills/elearning/service/AdminLessonVideoService.java` | Video upload orchestration | Governs admin lesson media behavior |
+| `src/main/resources/application.yml` | Shared config | Source of truth for profile default and rate limits |
+| `src/main/resources/application-local.yml` | Local demo config | H2 + in-memory media + local JWT secret |
+| `src/main/resources/application-postgres.yml` | Non-local env-driven config | Fail-closed runtime config for PostgreSQL, S3, and JWT |
+| `src/test/java/kz/skills/elearning/ApiIntegrationTests.java` | Main backend regression suite | Best contract reference when frontend behavior is unclear |
+| `src/test/java/kz/skills/elearning/RateLimitingIntegrationTests.java` | `429` regression suite | Frontend backoff behavior should match this |
+| `src/test/java/kz/skills/elearning/ProfileConfigurationTests.java` | Fail-closed config test | Confirms non-local secret strictness |
 
-### Persistence and Security Foundations
+### External frontend map from user-provided blueprint
 
-| Path | Responsibility | Why it matters |
+These paths are not in this repo and should be revalidated inside `oyn_front` before editing:
+
+| Path | Reported responsibility | Why it matters |
 | --- | --- | --- |
-| `src/main/java/kz/skills/elearning/entity/Course.java` | Course aggregate root | Owns lessons and enrollment relationships |
-| `src/main/java/kz/skills/elearning/entity/Lesson.java` | Lesson model | Now carries learner-facing `videoUrl` plus storage metadata |
-| `src/main/java/kz/skills/elearning/entity/PlatformUser.java` | User record | Represents both pre-registration leads and fully registered accounts |
-| `src/main/java/kz/skills/elearning/entity/Enrollment.java` | Course membership record | Persists learner/course relationship |
-| `src/main/java/kz/skills/elearning/security/JwtAuthenticationFilter.java` | JWT-to-principal bridge | Populates Spring Security context |
-| `src/main/java/kz/skills/elearning/security/JwtService.java` | Token generation/validation | Central source for token expiry behavior |
-| `src/main/java/kz/skills/elearning/exception/GlobalExceptionHandler.java` | Error envelope mapping | Keeps API errors consistent across auth, validation, domain, and upload failures |
-| `src/main/resources/db/migration/V1__init_schema.sql` | Baseline schema | Creates core course/lesson/user/enrollment tables |
-| `src/main/resources/db/migration/V2__add_lesson_video_uploads.sql` | Media schema evolution | Adds lesson video metadata and `lesson_video_uploads` |
+| `src/App.js` | Main router and provider tree | Likely the composition root for frontend integration work |
+| `src/Components/Login.jsx` | JWT acquisition and storage | Must align with the current backend contract |
+| `src/Components/Registration.jsx` | Registration flow | Must send the correct Spring DTO shape |
+| `src/Pages/CoursePage/CourseCatalog.jsx` | Course catalog UI | Should consume `/api/courses` |
+| `src/Pages/CoursePage/CourseLandingPage.jsx` | Course landing and enrollment | Must handle `409` and `429` correctly |
+| `src/Pages/LessonPage/LessonViewer.jsx` | Lesson viewer | Must trust backend `videoUrl` |
+| `src/redux/userSlice.js` | Session-level Redux state | Likely where `/api/auth/me` should hydrate user state |
+| `src/index.css` | Global styles | Important if new auth/conflict states need styling |
 
-### Tests and Docs
+## Added and Removed Since The Cleanup Pass
 
-| Path | Responsibility | Why it matters |
-| --- | --- | --- |
-| `src/test/java/kz/skills/elearning/ApiIntegrationTests.java` | Main behavior regression suite | Covers auth, enrollment visibility, and admin video upload workflow |
-| `src/test/java/kz/skills/elearning/InMemoryVideoStorageServiceTests.java` | Storage unit test | Verifies the in-memory provider contract |
-| `src/test/java/kz/skills/elearning/PostgresProfileStartupTests.java` | Profile smoke test | Confirms `prod` activates the `postgres` profile group cleanly |
-| `src/test/java/kz/skills/elearning/ElearningBackendApplicationTests.java` | Context smoke test | Confirms app startup under test overrides |
-| `README.md` | Human-readable project intro | Currently lags behind the codebase in a few important areas |
-| `docs/demo-commands.sh` | Demo script | Still shows only the learner flow |
-| `docs/mvp-schema.sql` | Legacy schema doc | No longer reflects the media-upload schema and should not be treated as canonical |
+### Added in this backend repo
 
-## Core Business Logic Explained
+- admin course CRUD endpoints and service layer
+- fail-closed non-local configuration using explicit env vars
+- local demo default profile with H2 and in-memory media
+- request rate limiting for login, registration, and enrollment
+- JSON `401` and `403` responses from security entry points
+- safer JWT handling for malformed or deleted-user tokens
+- generic login errors that do not reveal passwordless account state
+- anonymous enrollment behavior that no longer overwrites existing nonblank lead profiles
+- Maven Wrapper scripts
+- `.env.example`
+- `docs/DEMO_RUNBOOK.md`
+- `docs/REQUIREMENTS_MATRIX.md`
+- backend regression tests for the new flows
 
-### 1. Anonymous enrollment and later registration share one user row
+### Removed from this repo to eliminate architectural confusion
 
-This remains the most important design shortcut in the app.
+- the temporary in-repo frontend folder that I had added earlier
+- all documentation claims that this repo stores the canonical frontend
+- all README/blueprint references telling future agents to edit a local frontend here
 
-- `EnrollmentService` finds or creates a `PlatformUser` by normalized email.
-- A user created from enrollment may have no `passwordHash`.
-- `AuthService.register` upgrades that same record later if the email already exists without a password.
-- `AuthService.login` rejects passwordless shells and tells the caller to register first.
+### Invalidated assumptions
 
-Why this exists:
+- the backend no longer defaults to `postgres`; it now defaults to `local`
+- committed fallback secrets for non-local runtime are no longer the intended behavior
+- login no longer tells passwordless users to register first; it now returns a generic invalid-credentials error
+- anonymous enrollment should not be treated as a profile-update mechanism for existing lead shells
+- `docs/mvp-schema.sql` is not the schema source of truth
+- frontend implementation details must be looked up in `oyn_front`, not inferred from this repo
 
-- preserves enrollments created before registration,
-- avoids duplicate people records,
-- keeps the signup funnel low-friction,
-- avoids a separate lead table.
+## Backend-Side Conflict Resolution Plan
 
-Tradeoff:
+This is the plan the backend-side AI agent should use to find and fix conflicts on this side of the integration.
 
-- `PlatformUser` mixes lead-style and fully authenticated lifecycles in one table.
+1. Establish source-of-truth precedence
+   - backend code and tests win over stale docs or stale frontend assumptions
+   - use controllers, DTOs, `SecurityConfig`, YAML config, and integration tests as the contract authority
 
-### 2. Lesson video upload is a two-step admin workflow
+2. Track frontend-relevant behavior changes explicitly
+   - when route auth, status codes, DTO fields, or profile behavior changes, update this blueprint and backend tests in the same pass
 
-The new media subsystem works like this:
+3. Keep error semantics stable
+   - avoid casual changes to `401`, `403`, `409`, and `429` behavior without updating contract notes and regression tests
 
-1. `initiateUpload` validates content type and max size, builds an object key, deletes any previous pending row for the lesson, stores a new `LessonVideoUpload`, and returns upload instructions.
-2. The client uploads directly to the storage provider.
-3. `completeUpload` reloads the pending row, checks expiry, verifies the uploaded object metadata, writes lesson video metadata back to `Lesson`, clears the pending row, and best-effort deletes any previously attached object.
-4. `deleteVideo` clears lesson video metadata and best-effort deletes the stored object.
+4. Prefer compatibility guidance before risky breaks
+   - if the frontend lags behind, document the integration impact before introducing shape-breaking changes
 
-Important implication:
+5. Reconcile external frontend assumptions before major refactors
+   - if future work touches auth, enrollment, lesson payloads, or admin CRUD, compare the change against the reported `oyn_front` architecture and then update this document
 
-- the learner-facing lesson route did not change shape; the media subsystem updates `Lesson.videoUrl`, and `CourseService` simply returns that value.
+### Implemented backend-side cleanup in this session
 
-### 3. Role boundaries are simple but real
+- the temporary in-repo frontend was removed
+- stale frontend references were removed from the backend docs
+- this blueprint now treats `oyn_front` as the canonical frontend
+- the backend contract and frontend-agent guidance now live in one document
 
-- Public: health, catalog, course detail, lesson viewer, register, login, and enrollment creation
-- Authenticated: `/api/auth/me`, enrollment listing
-- Admin only: `/api/admin/**`
+## Conflict Resolution Plan For The Frontend AI Agent
 
-Students can only list their own enrollments. Admins can filter enrollments by `courseSlug`, `email`, or both.
+Use this plan when `oyn_front` is behind the backend or when backend/frontend assumptions conflict.
 
-### 4. DTO assembly still happens in services
+1. Audit before editing
+   - inspect `App.js`, auth components, course pages, Redux session slice, and shared fetch helpers first
+   - identify whether the code path talks to `7777` or `3001`
+   - do not assume every failing screen belongs to the eLearning backend
 
-The services both execute business rules and construct response DTOs. That keeps the codebase small and easy to extend quickly, but it also couples service methods to the API contract.
+2. Rebuild the contract map from backend source of truth
+   - verify routes, payloads, auth requirements, and failure codes against backend controllers plus integration tests
+   - never infer endpoint shape from stale frontend code alone
 
-## Infrastructure and Environment
+3. Centralize network behavior early
+   - move hardcoded origins into `.env`
+   - create one API client that:
+     - chooses the correct backend origin
+     - attaches the Bearer token automatically for protected `7777` calls
+     - normalizes JSON and non-JSON errors
+     - handles `204` correctly
 
-### Profiles and Database
+4. Standardize session lifecycle
+   - choose one browser storage strategy and apply it consistently
+   - after login or registration, store the token and refresh session state using `/api/auth/me` if needed
+   - on `401`, clear the stored token and session state immediately
 
-Current config truth:
+5. Handle backend statuses intentionally
+   - `401`: log out or prompt re-authentication
+   - `403`: show permission messaging
+   - `404`: render missing-course or missing-lesson states
+   - `409`: surface duplicate-enrollment or delete-conflict guidance
+   - `429`: show retry/backoff messaging and avoid spam retries
 
-- `application.yml` sets `spring.profiles.default: postgres`
-- `application.yml` also groups `prod -> postgres`
-- base datasource values in `application.yml` still point at H2
-- `application-postgres.yml` overlays PostgreSQL datasource settings
-- `application-local.yml` enables the H2 console and a local JWT secret fallback
-- Hibernate runs with `ddl-auto: validate`
-- Flyway owns schema creation and evolution
+6. Keep the lead-shell model intact
+   - do not force registration before enrollment
+   - do not assume enrollment should update an existing user profile
+   - treat enrollment as a low-friction funnel first
 
-Practical takeaway:
+7. Integrate admin flows separately from learner flows
+   - guard admin routes in the router and UI state
+   - do not leak admin actions into learner components
+   - expect admin CRUD and admin media endpoints to require `ROLE_ADMIN`
 
-- the repo is no longer best described as "local profile by default"
-- local H2 console support still exists, but only when `local` is active
-- the real schema source of truth is the Flyway migration folder, not `docs/mvp-schema.sql`
+8. Preserve legacy domains while modernizing eLearning
+   - do not break gallery/photoshoots/vacancies while upgrading auth/course flows
+   - make changes domain-by-domain instead of rewriting the whole SPA at once
 
-### Video Storage
+9. Validate happy and failure paths
+   - test login, registration, enrollment, lesson viewer, admin CRUD, `401`, `409`, and `429` states
+   - if a feature works only on success paths, the integration is incomplete
 
-Default media config in `application.yml`:
+10. Update docs with code
+   - when frontend auth storage, route map, or API wrapper patterns change, update the frontend blueprint or README in the same change
 
-- provider: `s3`
-- bucket: `elearning-videos`
-- endpoint: `http://localhost:9000`
-- public base URL: `http://localhost:9000/elearning-videos`
-- region: `us-east-1`
-- lesson prefix: `lessons`
-- max file size: `536870912` bytes
-- allowed content types: `video/mp4`, `video/webm`
-- presign duration: `15m`
-- path-style access: enabled
+## Instructions And Recommendations For The Frontend AI Agent
 
-Interpretation:
+Use these rules to avoid major errors and conflicts:
 
-- the code is written for S3-compatible storage, including MinIO-style local setups
-- tests switch the provider to `in-memory` so they do not depend on real object storage
-
-### Security
-
-- Stateless JWT auth
-- BCrypt password hashing
-- `ApiErrorResponse` is used for application-generated errors
-- `SecurityConfig` also returns a matching JSON envelope for unauthenticated `401` responses
-- `@EnableMethodSecurity` is enabled, though the main authorization rules are still URL-based
-
-### Tooling and Delivery
-
-No CI/CD or containerization files were found:
-
-- no `.github/workflows`
-- no Dockerfile
-- no Docker Compose
-- no Maven wrapper script
-
-Implication:
-
-- the app is easy to read and run in a configured IDE,
-- but repeatable CLI/bootstrap workflows are weaker than the code itself.
+1. Use backend code and tests as the contract source of truth, not memory.
+2. Verify whether a feature belongs to the Spring backend (`7777`) or legacy `json-server` (`3001`) before editing.
+3. Do not reintroduce client-side password hashing or direct auth against `json-server`.
+4. Put API origins in environment variables instead of hardcoding them in components.
+5. Use a single API client wrapper for auth headers, JSON parsing, and common error handling.
+6. Treat `/api/auth/me` as the canonical session-refresh endpoint.
+7. Expect public enrollment to work for anonymous users and registered users alike.
+8. Expect duplicate enrollment to return `409`, not silent success.
+9. Expect login, registration, and enrollment to be rate limited and capable of returning `429`.
+10. Expect malformed, expired, or deleted-user tokens to behave like `401`, not like server crashes.
+11. Expect admin-only endpoints under `/api/admin/**` to require an admin role and return `403` for regular learners.
+12. Use toast or inline feedback for backend-driven errors, especially `401`, `409`, and `429`.
+13. Do not parse bodies on `204` responses.
+14. Preserve legacy routes while migrating eLearning flows; avoid all-at-once rewrites unless explicitly requested.
+15. If a contract seems unclear, check backend tests before changing frontend assumptions.
 
 ## Current State Verified From Source
 
-The following items are directly supported by the current codebase:
+The following items are directly supported by code in this workspace:
 
-- package layout is `config`, `controller`, `dto`, `entity`, `exception`, `repository`, `security`, `service`, and `service/video`
-- the seeded course remains `digital-skills-kz`
-- the seed data includes two lessons
-- seeded lessons still start with example `videoUrl` values even before admin-managed uploads happen
-- lesson viewer responses include `videoUrl`
-- admin media endpoints are present and guarded by `ROLE_ADMIN`
-- the codebase currently contains 15 tests:
-  - 12 integration tests in `ApiIntegrationTests`
-  - 1 unit test for `InMemoryVideoStorageService`
-  - 1 postgres-profile startup test
-  - 1 context load smoke test
-- tests use `app.media.video.provider=in-memory` when exercising upload behavior
-- no in-repo Codex `SKILL.md` or automation files were found
+- the backend supports all required MVP backend routes plus admin course CRUD and admin media endpoints
+- the backend defaults to a self-contained `local` profile
+- non-local runtime expects explicit env vars for PostgreSQL, JWT, and S3-compatible media
+- request rate limiting is present for public auth and enrollment endpoints
+- lesson viewer payloads expose `videoUrl`
+- admin course CRUD is protected by `ROLE_ADMIN`
+- the backend test suite includes coverage for:
+  - deleted-user JWT fallback to `401`
+  - anonymous enrollment non-mutation
+  - admin course CRUD
+  - `409` delete conflict
+  - `429` rate limiting
+  - fail-closed postgres profile startup behavior
 
-The following claims were not re-executed from this session:
+The following frontend claims come from user-provided architecture notes and were not directly revalidated in this workspace:
 
-- `mvn test` status
-- full app startup against a real PostgreSQL instance
-- live S3/MinIO upload behavior
-
-## Documentation Drift and Risk Areas
-
-### Documentation drift that should be assumed until checked
-
-- `README.md` still describes the project largely as the older learner MVP
-- `README.md` says the default profile is `local`, but config now says `postgres`
-- `docs/demo-commands.sh` does not include the admin video upload flow
-- `docs/mvp-schema.sql` does not include the `V2` lesson video upload schema
-
-### Notable technical risks
-
-1. Default profile surprise
-   The default profile is `postgres`, which materially changes startup expectations compared with the older docs.
-
-2. Sensitive config defaults are still present in profile files
-   `application-postgres.yml` includes fallback PostgreSQL and JWT values, so secret externalization is not as strict as earlier documentation implied.
-
-3. Pending upload cleanup is request-driven, not scheduled
-   Expired pending rows are cleaned during completion attempts, but there is no background cleanup process.
-
-4. Upload verification is metadata-based
-   The completion flow checks content type and size, but it does not do deeper media validation, checksums, transcoding, or virus scanning.
-
-5. Delivery automation is thin
-   There is still no CI pipeline, container story, or checked-in local bootstrap wrapper.
+- the exact current code shape of `oyn_front`
+- React 19 and Router v7 usage in that repo
+- `react-toastify` integration details
+- the exact hardcoded-origin count in that repo
 
 ## Recommended Next Engineering Steps
 
-1. Update `README.md`, `docs/demo-commands.sh`, and `docs/mvp-schema.sql` so they stop disagreeing with the Java/YAML/Flyway source of truth.
-2. Decide whether the intended default runtime should really be `postgres`; if not, move back to `local` as the default profile.
-3. Remove committed fallback secrets/credentials from non-local profile files and document required env vars explicitly.
-4. Add an integration smoke path for real S3-compatible storage, or at least a documented MinIO developer flow.
-5. Add cleanup/expiry handling for stale `lesson_video_uploads` rows.
-6. If media workflows keep growing, split lesson-content/media concerns into a clearer bounded module.
+1. Keep this repo backend-only and do not reintroduce frontend source here unless the architecture is intentionally changed.
+2. Reconcile `oyn_front` against this backend contract using this blueprint as the handoff document.
+3. Standardize, in the frontend repo:
+   - auth storage strategy,
+   - env var naming,
+   - API client wrapper,
+   - error-handling conventions,
+   - route ownership between legacy and eLearning domains.
+4. Add cross-repo smoke verification once the proper toolchains are available:
+   - backend tests,
+   - frontend tests,
+   - one end-to-end login/enroll/lesson/admin CRUD check.
+5. Update this blueprint whenever backend contract or frontend integration strategy changes.
 
-## Short Instruction For Future AI Developers
+## Mental Model For Future AI Developers
 
-Use the Java code, YAML config, Flyway migrations, and tests as the source of truth. Treat older docs as helpful but fallible.
+If you remember only one thing, remember this:
 
-Before changing behavior:
-
-1. check `SecurityConfig` for route visibility and admin boundaries,
-2. check `application.yml` plus active profile overlays before assuming startup behavior,
-3. check Flyway migrations instead of `docs/mvp-schema.sql` for schema truth,
-4. check `EnrollmentService` and `AuthService` before changing user/account lifecycle behavior,
-5. check `AdminLessonVideoService`, `Lesson`, and `VideoStorageService` before touching lesson media behavior,
-6. update tests and companion docs together when changing public contracts.
-
-If you only remember one mental model, remember this:
-
-- this is a layered Spring Boot backend,
-- learner APIs are still the stable public face,
-- admin media upload is now a first-class subsystem,
-- the current truth is in code and migrations, not in the older docs.
+- this repo is the backend contract source of truth,
+- the frontend lives elsewhere,
+- integration work must be deliberate, contract-driven, and cross-repo aware.

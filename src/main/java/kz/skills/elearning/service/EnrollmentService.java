@@ -56,8 +56,7 @@ public class EnrollmentService {
         if (student == null) {
             student = createStudent(request, normalizedEmail);
         } else if (student.getPasswordHash() == null || student.getPasswordHash().isBlank()) {
-            student.setFullName(request.fullName().trim());
-            student.setLocale(request.locale().trim());
+            mergeLeadProfile(student, request);
         }
 
         if (student.getId() == null || student.getPasswordHash() == null || student.getPasswordHash().isBlank()) {
@@ -136,8 +135,17 @@ public class EnrollmentService {
         return user;
     }
 
+    private void mergeLeadProfile(PlatformUser student, EnrollmentRequest request) {
+        if (student.getFullName() == null || student.getFullName().isBlank()) {
+            student.setFullName(request.fullName().trim());
+        }
+        if (student.getLocale() == null || student.getLocale().isBlank()) {
+            student.setLocale(request.locale().trim());
+        }
+    }
+
     private String normalizeEmail(String email) {
-        return email.trim().toLowerCase(Locale.ROOT);
+        return email == null ? null : email.trim().toLowerCase(Locale.ROOT);
     }
 
     private EnrollmentResponse toResponse(Enrollment enrollment) {

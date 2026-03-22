@@ -2,19 +2,13 @@ spring:
   application:
     name: elearning-backend
   profiles:
-    default: postgres
+    default: local
     group:
       prod: postgres
-  datasource:
-    url: jdbc:h2:mem:elearningdb;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
-    driver-class-name: org.h2.Driver
-    username: sa
-    password:
   jpa:
     hibernate:
       ddl-auto: validate
     open-in-view: false
-    show-sql: true
     properties:
       hibernate:
         format_sql: true
@@ -32,22 +26,12 @@ app:
     allowed-origins:
       - http://localhost:3000
       - http://localhost:5173
-  media:
-    video:
-      provider: ${APP_MEDIA_VIDEO_PROVIDER:s3}
-      bucket: ${APP_MEDIA_VIDEO_BUCKET:elearning-videos}
-      endpoint: ${APP_MEDIA_VIDEO_ENDPOINT:http://localhost:9000}
-      public-base-url: ${APP_MEDIA_VIDEO_PUBLIC_BASE_URL:http://localhost:9000/elearning-videos}
-      access-key: ${APP_MEDIA_VIDEO_ACCESS_KEY:minioadmin}
-      secret-key: ${APP_MEDIA_VIDEO_SECRET_KEY:minioadmin}
-      region: ${APP_MEDIA_VIDEO_REGION:us-east-1}
-      lesson-prefix: ${APP_MEDIA_VIDEO_LESSON_PREFIX:lessons}
-      max-file-size-bytes: ${APP_MEDIA_VIDEO_MAX_FILE_SIZE_BYTES:536870912}
-      allowed-content-types:
-        - video/mp4
-        - video/webm
-      presign-duration: ${APP_MEDIA_VIDEO_PRESIGN_DURATION:15m}
-      path-style-access-enabled: ${APP_MEDIA_VIDEO_PATH_STYLE_ACCESS_ENABLED:true}
   security:
     jwt:
       expiration: 24h
+    rate-limit:
+      enabled: true
+      window: 1m
+      login-max-requests: 5
+      register-max-requests: 3
+      enrollment-max-requests: 10

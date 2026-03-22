@@ -17,7 +17,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 @Service
-@ConditionalOnProperty(name = "app.media.video.provider", havingValue = "s3", matchIfMissing = true)
+@ConditionalOnProperty(name = "app.media.video.provider", havingValue = "s3")
 public class S3VideoStorageService implements VideoStorageService {
 
     private final S3Client s3Client;
