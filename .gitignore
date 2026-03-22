@@ -4,3 +4,5 @@ target/
 out/
 .vscode/
 *.log
+.env
+.wrapper-download/
