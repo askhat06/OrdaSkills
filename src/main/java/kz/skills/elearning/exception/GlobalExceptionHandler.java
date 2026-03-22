@@ -32,6 +32,11 @@ public class GlobalExceptionHandler {
         return buildResponse(HttpStatus.CONFLICT, ex.getMessage(), Map.of());
     }
 
+    @ExceptionHandler(ConflictException.class)
+    public ResponseEntity<ApiErrorResponse> handleConflictException(ConflictException ex) {
+        return buildResponse(HttpStatus.CONFLICT, ex.getMessage(), Map.of());
+    }
+
     @ExceptionHandler(VideoUploadException.class)
     public ResponseEntity<ApiErrorResponse> handleVideoUpload(VideoUploadException ex) {
         return buildResponse(HttpStatus.BAD_REQUEST, ex.getMessage(), Map.of());

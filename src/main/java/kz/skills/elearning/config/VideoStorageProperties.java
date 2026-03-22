@@ -1,5 +1,6 @@
 package kz.skills.elearning.config;
 
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -14,24 +15,20 @@ import java.util.List;
 public class VideoStorageProperties {
 
     @NotBlank
-    private String provider = "s3";
+    private String provider;
 
     @NotBlank
-    private String bucket = "elearning-videos";
+    private String bucket;
+
+    private String endpoint;
 
     @NotBlank
-    private String endpoint = "http://localhost:9000";
+    private String publicBaseUrl;
 
-    @NotBlank
-    private String publicBaseUrl = "http://localhost:9000/elearning-videos";
+    private String accessKey;
 
-    @NotBlank
-    private String accessKey = "minioadmin";
+    private String secretKey;
 
-    @NotBlank
-    private String secretKey = "minioadmin";
-
-    @NotBlank
     private String region = "us-east-1";
 
     @NotBlank
@@ -140,5 +137,26 @@ public class VideoStorageProperties {
 
     public void setPathStyleAccessEnabled(boolean pathStyleAccessEnabled) {
         this.pathStyleAccessEnabled = pathStyleAccessEnabled;
+    }
+
+    @AssertTrue(message = "app.media.video.provider must be either 's3' or 'in-memory'")
+    public boolean isProviderSupported() {
+        return "s3".equals(provider) || "in-memory".equals(provider);
+    }
+
+    @AssertTrue(message = "S3 video storage requires endpoint, accessKey, secretKey, and region")
+    public boolean isS3ConfigurationValid() {
+        if (!"s3".equals(provider)) {
+            return true;
+        }
+
+        return hasText(endpoint)
+                && hasText(accessKey)
+                && hasText(secretKey)
+                && hasText(region);
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 }
