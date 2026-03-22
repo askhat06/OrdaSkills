@@ -1,10 +1,22 @@
 spring:
+  datasource:
+    url: jdbc:h2:mem:elearningdb;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
   h2:
     console:
       enabled: true
       path: /h2-console
+  jpa:
+    show-sql: true
 
 app:
+  media:
+    video:
+      provider: in-memory
+      bucket: elearning-videos-local
+      public-base-url: http://localhost:7777/media/videos
   security:
     jwt:
       secret: ${APP_SECURITY_JWT_SECRET_LOCAL:c3VwZXItc2VjcmV0LWtleS1mb3ItbG9jYWwtZGV2LW9ubHk=}

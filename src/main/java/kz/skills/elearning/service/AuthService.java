@@ -19,6 +19,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Locale;
+
 @Service
 @Transactional
 public class AuthService {
@@ -74,7 +76,7 @@ public class AuthService {
                 .orElseThrow(() -> new InvalidCredentialsException("Invalid email or password"));
 
         if (user.getPasswordHash() == null || user.getPasswordHash().isBlank()) {
-            throw new InvalidCredentialsException("This account exists but has no password yet. Please register first.");
+            throw new InvalidCredentialsException("Invalid email or password");
         }
 
         try {
@@ -96,7 +98,7 @@ public class AuthService {
     }
 
     private String normalizeEmail(String email) {
-        return email == null ? null : email.trim().toLowerCase();
+        return email == null ? null : email.trim().toLowerCase(Locale.ROOT);
     }
 
     private String normalizeText(String value) {
@@ -107,6 +109,6 @@ public class AuthService {
         if (locale == null || locale.isBlank()) {
             return "ru";
         }
-        return locale.trim().toLowerCase();
+        return locale.trim().toLowerCase(Locale.ROOT);
     }
 }

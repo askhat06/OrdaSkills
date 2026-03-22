@@ -2,11 +2,14 @@ package kz.skills.elearning.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletResponse;
+import kz.skills.elearning.config.RateLimitProperties;
 import kz.skills.elearning.dto.ApiErrorResponse;
 import kz.skills.elearning.security.JwtAuthenticationFilter;
+import kz.skills.elearning.security.RequestRateLimitFilter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -28,16 +31,20 @@ import java.util.Map;
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity
+@EnableConfigurationProperties(RateLimitProperties.class)
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final RequestRateLimitFilter requestRateLimitFilter;
     private final ObjectMapper objectMapper;
     private final boolean h2ConsoleEnabled;
 
     public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter,
+                          RequestRateLimitFilter requestRateLimitFilter,
                           ObjectMapper objectMapper,
                           @Value("${spring.h2.console.enabled:false}") boolean h2ConsoleEnabled) {
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
+        this.requestRateLimitFilter = requestRateLimitFilter;
         this.objectMapper = objectMapper;
         this.h2ConsoleEnabled = h2ConsoleEnabled;
     }
@@ -59,19 +66,13 @@ public class SecurityConfig {
                             .requestMatchers(HttpMethod.GET, "/api/auth/me").authenticated()
                             .anyRequest().authenticated();
                 })
-                .exceptionHandling(ex -> ex.authenticationEntryPoint((request, response, authException) -> {
-                    response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-                    response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-                    ApiErrorResponse payload = new ApiErrorResponse(
-                            LocalDateTime.now(ZoneOffset.UTC),
-                            HttpServletResponse.SC_UNAUTHORIZED,
-                            "Unauthorized",
-                            "Authentication required",
-                            Map.of()
-                    );
-                    objectMapper.writeValue(response.getWriter(), payload);
-                }))
+                .exceptionHandling(ex -> ex
+                        .authenticationEntryPoint((request, response, authException) ->
+                                writeErrorResponse(response, HttpServletResponse.SC_UNAUTHORIZED, "Unauthorized", "Authentication required"))
+                        .accessDeniedHandler((request, response, accessDeniedException) ->
+                                writeErrorResponse(response, HttpServletResponse.SC_FORBIDDEN, "Forbidden", "Access denied")))
                 .headers(headers -> headers.frameOptions(frame -> frame.sameOrigin()))
+                .addFilterBefore(requestRateLimitFilter, JwtAuthenticationFilter.class)
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
@@ -85,5 +86,18 @@ public class SecurityConfig {
     @Bean
     public AuthenticationManager authenticationManager(AuthenticationConfiguration configuration) throws Exception {
         return configuration.getAuthenticationManager();
+    }
+
+    private void writeErrorResponse(HttpServletResponse response, int status, String error, String message) throws java.io.IOException {
+        response.setStatus(status);
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        ApiErrorResponse payload = new ApiErrorResponse(
+                LocalDateTime.now(ZoneOffset.UTC),
+                status,
+                error,
+                message,
+                Map.of()
+        );
+        objectMapper.writeValue(response.getWriter(), payload);
     }
 }

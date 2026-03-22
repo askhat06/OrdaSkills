@@ -1,13 +1,29 @@
 spring:
   datasource:
-    url: ${POSTGRES_URL:jdbc:postgresql://localhost:5432/elearning}
-    username: ${POSTGRES_USER:postgres}
-    password: ${POSTGRES_PASSWORD:As-49510}
+    url: ${POSTGRES_URL}
+    username: ${POSTGRES_USER}
+    password: ${POSTGRES_PASSWORD}
     driver-class-name: org.postgresql.Driver
   jpa:
     show-sql: true
 
 app:
+  media:
+    video:
+      provider: s3
+      bucket: ${APP_MEDIA_VIDEO_BUCKET}
+      endpoint: ${APP_MEDIA_VIDEO_ENDPOINT}
+      public-base-url: ${APP_MEDIA_VIDEO_PUBLIC_BASE_URL}
+      access-key: ${APP_MEDIA_VIDEO_ACCESS_KEY}
+      secret-key: ${APP_MEDIA_VIDEO_SECRET_KEY}
+      region: ${APP_MEDIA_VIDEO_REGION:us-east-1}
+      lesson-prefix: ${APP_MEDIA_VIDEO_LESSON_PREFIX:lessons}
+      max-file-size-bytes: ${APP_MEDIA_VIDEO_MAX_FILE_SIZE_BYTES:536870912}
+      allowed-content-types:
+        - video/mp4
+        - video/webm
+      presign-duration: ${APP_MEDIA_VIDEO_PRESIGN_DURATION:15m}
+      path-style-access-enabled: ${APP_MEDIA_VIDEO_PATH_STYLE_ACCESS_ENABLED:true}
   security:
     jwt:
-      secret: ${APP_SECURITY_JWT_SECRET_POSTGRES:c3VwZXItc2VjcmV0LWtleS1mb3ItcG9zdGdyZXMtbG9jYWwtZGV2}
+      secret: ${APP_SECURITY_JWT_SECRET}
