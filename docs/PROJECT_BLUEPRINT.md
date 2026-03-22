@@ -1,36 +1,45 @@
-# Project Blueprint: eLearning Backend MVP
+# Project Blueprint: eLearning Backend
 
 ## Snapshot
 
 - Repository: `elearning-backend`
-- Audit date: `2026-03-16`
-- Runtime status: `mvn test` passes with 9 tests; Spring context starts successfully with H2 and with the `prod+postgres` profile combination
-- Architectural style: layered monolith with REST controllers, service layer, Spring Data JPA repositories, and JWT-based stateless security
+- Audit date: `2026-03-21`
+- Audit method: code inspection plus repo exploration by a delegated subagent
+- Runtime verification status: tests were not re-run from this session because Maven CLI is not installed in this workspace
+- Architectural style: layered Spring Boot monolith with JWT auth, Flyway-managed schema, and an admin-only lesson video upload subsystem
+- Current default profile: `postgres`
+- Canonical schema source: `src/main/resources/db/migration/*.sql`
 
 ## The Essence
 
-This MVP is a backend for a Kazakhstan-focused e-learning platform. Its current purpose is to support a minimal learner journey:
+This repository is a Kazakhstan-focused e-learning backend. It still supports the original learner MVP flow, but it now also includes an admin media-management slice for lesson videos.
 
-1. browse a seeded course catalog,
+Current product shape:
+
+1. learners can browse a seeded course catalog,
 2. open a course landing page,
-3. enroll into a course,
-4. register/login for an account,
-5. open a lesson viewer,
+3. enroll anonymously or as an existing user,
+4. register or log in with JWT auth,
+5. open lesson viewer pages,
 6. retrieve the current authenticated user,
-7. inspect saved enrollments if authenticated.
+7. inspect enrollments with role-based access rules,
+8. upload, finalize, or delete lesson videos through admin-only endpoints.
 
 Primary stack:
 
-- Java 17 target, tested on Java 21
+- Java 17 target
 - Spring Boot 3.5.11
 - Spring Web
 - Spring Data JPA + Hibernate
+- Bean Validation
 - Spring Security
 - JJWT 0.13.0
-- H2 in-memory DB by default
-- PostgreSQL profile for later persistence
+- Flyway
+- H2 support for tests/local scenarios
+- PostgreSQL profile configuration
+- AWS SDK S3 client/presigner for S3-compatible object storage
 
-This is not Clean Architecture. It is a pragmatic Spring Boot layered MVP where domain entities, persistence, and application logic remain close together for speed of delivery.
+This is still not Clean Architecture. It is a pragmatic Spring layered backend where controllers, services, entities, repositories, security, and storage integration live in one deployable application.
 
 ## High-Level Architecture
 
@@ -39,31 +48,49 @@ This is not Clean Architecture. It is a pragmatic Spring Boot layered MVP where 
 The codebase follows a classic Spring layered monolith:
 
 - `controller` exposes HTTP endpoints
-- `service` contains business rules and DTO mapping
-- `repository` abstracts persistence
-- `entity` models database state
-- `security` handles authentication and principal resolution
-- `exception` centralizes API error mapping
+- `service` contains business rules and DTO assembly
+- `repository` handles persistence access
+- `entity` models database tables
+- `security` wires JWT authentication and principals
+- `config` centralizes security, CORS, and media-storage setup
+- `service/video` abstracts video storage behind a provider interface
+- `exception` centralizes API error translation
 
 ### Request/Data Flow
 
 ```mermaid
 flowchart LR
-    Client["Client / Frontend"] --> Security["Spring Security Filter Chain"]
-    Security -->|Public route| Controller["REST Controller"]
-    Security -->|Bearer JWT| JwtFilter["JwtAuthenticationFilter"]
+    Client["Learner / Frontend"] --> Security["Spring Security Filter Chain"]
+    Admin["Admin UI"] --> Security
+    Security -->|Public or JWT| Controller["REST Controllers"]
+    Security -->|ROLE_ADMIN| AdminController["AdminLessonVideoController"]
+    Security --> JwtFilter["JwtAuthenticationFilter"]
     JwtFilter --> JwtService["JwtService"]
     JwtFilter --> UserDetails["PlatformUserDetailsService"]
     UserDetails --> UserRepo["PlatformUserRepository"]
-    Controller --> Service["Application Service"]
-    Service --> Repo["JPA Repository"]
-    Repo --> DB["H2 / PostgreSQL"]
-    Service --> DTO["Response DTO"]
+
+    Controller --> Service["Application Services"]
+    Service --> Repo["JPA Repositories"]
+    Repo --> DB["Flyway schema on H2 / PostgreSQL"]
+
+    AdminController --> AdminService["AdminLessonVideoService"]
+    AdminService --> LessonRepo["LessonRepository"]
+    AdminService --> PendingRepo["LessonVideoUploadRepository"]
+    AdminService --> Storage["VideoStorageService"]
+    Storage --> S3["S3-compatible storage"]
+    Storage --> Memory["InMemoryVideoStorageService (tests/dev)"]
+
+    Service --> DTO["Response DTOs"]
+    AdminService --> DTO
     DTO --> Controller
-    Controller --> Client
-    Service -.throws.-> Errors["Domain / Validation Exceptions"]
+    DTO --> AdminController
+
+    Service -.throws.-> Errors["Domain / validation exceptions"]
+    AdminService -.throws.-> Errors
     Errors --> Handler["GlobalExceptionHandler"]
     Handler --> Client
+    Handler --> Admin
+
     Seeder["DataSeeder"] --> Repo
 ```
 
@@ -74,6 +101,7 @@ erDiagram
     COURSE ||--o{ LESSON : contains
     COURSE ||--o{ ENROLLMENT : has
     PLATFORM_USER ||--o{ ENROLLMENT : owns
+    LESSON ||--o| LESSON_VIDEO_UPLOAD : has_pending_upload
 
     COURSE {
         long id
@@ -91,6 +119,11 @@ erDiagram
         string title
         int position
         int durationMinutes
+        string videoUrl
+        string videoStorageKey
+        string videoContentType
+        long videoSizeBytes
+        datetime videoUploadedAt
     }
 
     PLATFORM_USER {
@@ -109,357 +142,287 @@ erDiagram
         string status
         datetime enrolledAt
     }
+
+    LESSON_VIDEO_UPLOAD {
+        long id
+        long lesson_id
+        string objectKey
+        string originalFilename
+        string contentType
+        long sizeBytes
+        datetime expiresAt
+    }
 ```
-
-## Component Interaction
-
-### Dependency Structure
-
-- `AuthController` -> `AuthService` -> `PlatformUserRepository`, `AuthenticationManager`, `JwtService`
-- `CourseController` -> `CourseService` -> `CourseRepository`, `LessonRepository`
-- `EnrollmentController` -> `EnrollmentService` -> `EnrollmentRepository`, `CourseRepository`, `PlatformUserRepository`
-- `SecurityConfig` -> `JwtAuthenticationFilter`
-- `JwtAuthenticationFilter` -> `JwtService`, `PlatformUserDetailsService`
-- `PlatformUserDetailsService` -> `PlatformUserRepository`
-- `GlobalExceptionHandler` maps service/controller exceptions into HTTP JSON errors
-- `DataSeeder` bootstraps demo data through `CourseRepository`
-
-### Behavioral Notes
-
-- Catalog and lesson-read routes are public.
-- Registration and login are public.
-- Enrollment creation is public.
-- Enrollment listing is authenticated, even though older documentation presents it like a public demo endpoint.
-- JWT authentication is stateless; no server-side session storage exists.
-- Services return DTOs directly; controllers are thin.
-- Persistence is entity-driven; there is no separate domain model or mapping layer.
 
 ## API Surface
 
 | Route | Method | Auth | Backing controller/service | Purpose |
 | --- | --- | --- | --- | --- |
 | `/api/health` | GET | Public | `AppInfoController` | Simple liveness probe |
-| `/api/auth/register` | POST | Public | `AuthController` -> `AuthService.register` | Create account or upgrade pre-existing lead user |
-| `/api/auth/login` | POST | Public | `AuthController` -> `AuthService.login` | Return JWT |
+| `/api/auth/register` | POST | Public | `AuthController` -> `AuthService.register` | Create an account or upgrade a lead-style user shell |
+| `/api/auth/login` | POST | Public | `AuthController` -> `AuthService.login` | Return JWT access token |
 | `/api/auth/me` | GET | Authenticated | `AuthController` -> `AuthService.me` | Return current principal snapshot |
 | `/api/courses` | GET | Public | `CourseController` -> `CourseService.getCatalog` | Course catalog |
 | `/api/courses/{slug}` | GET | Public | `CourseController` -> `CourseService.getCourseLanding` | Course landing page |
-| `/api/courses/{courseSlug}/lessons/{lessonSlug}` | GET | Public | `CourseController` -> `CourseService.getLessonViewer` | Lesson viewer |
+| `/api/courses/{courseSlug}/lessons/{lessonSlug}` | GET | Public | `CourseController` -> `CourseService.getLessonViewer` | Lesson viewer including `videoUrl` |
 | `/api/enrollments` | POST | Public | `EnrollmentController` -> `EnrollmentService.enroll` | Create enrollment |
-| `/api/enrollments` | GET | Authenticated | `EnrollmentController` -> `EnrollmentService.getEnrollments` | Students can list only their own enrollments; admins can filter across all users |
-| `/h2-console` | GET/UI | Public | Spring Boot H2 console | Local DB inspection |
+| `/api/enrollments` | GET | Authenticated | `EnrollmentController` -> `EnrollmentService.getEnrollments` | Students see only their own enrollments; admins can filter across all users |
+| `/api/admin/courses/{courseSlug}/lessons/{lessonSlug}/video-upload` | POST | Admin | `AdminLessonVideoController` -> `AdminLessonVideoService.initiateUpload` | Create a pending upload and return upload instructions |
+| `/api/admin/courses/{courseSlug}/lessons/{lessonSlug}/video-upload/complete` | POST | Admin | `AdminLessonVideoController` -> `AdminLessonVideoService.completeUpload` | Verify stored object and attach it to the lesson |
+| `/api/admin/courses/{courseSlug}/lessons/{lessonSlug}/video` | DELETE | Admin | `AdminLessonVideoController` -> `AdminLessonVideoService.deleteVideo` | Remove lesson video metadata and best-effort delete the object |
+| `/h2-console` | GET/UI | Public only when `local` enables it | Spring H2 console | Local DB inspection only |
 
-## File-by-File / Module-by-Module Breakdown
+## High-Signal File Map
 
-### Root and Docs
+### Build, Bootstrap, and Config
 
-| Path | Responsibility | Key logic | Why it exists in this form |
-| --- | --- | --- | --- |
-| `pom.xml` | Maven build descriptor | Declares Spring Boot starters, H2, PostgreSQL, Security, JWT libraries | Minimal dependency set for a demoable monolith without extra plugins or modules |
-| `README.md` | Human-readable project intro | Lists routes, auth flow, runtime port, and demo behavior | Aligned with the current backend behavior after the audit fixes |
-| `docs/demo-commands.sh` | Manual demo script | `curl` requests for catalog, enroll, register, lesson, authenticated enrollment list | Quick smoke-demo helper for a human presenter |
-| `docs/mvp-schema.sql` | Draft schema documentation | SQL tables for core course/enrollment/auth model | Lightweight schema reference that now matches the current entity model more closely |
+| Path | Responsibility | Why it matters |
+| --- | --- | --- |
+| `pom.xml` | Maven build descriptor | Declares Spring Boot, Flyway, Security, JWT, PostgreSQL, H2, and AWS S3 dependencies |
+| `src/main/java/kz/skills/elearning/ElearningBackendApplication.java` | Spring Boot entry point | Single-module app bootstrap |
+| `src/main/java/kz/skills/elearning/config/SecurityConfig.java` | Route authorization and stateless auth wiring | Defines public routes, authenticated routes, and `/api/admin/**` role requirements |
+| `src/main/java/kz/skills/elearning/config/WebConfig.java` | CORS config | Allows configured frontend origins on `/api/**` |
+| `src/main/java/kz/skills/elearning/config/VideoStorageConfig.java` | S3 client/presigner bean wiring | Enables S3-compatible uploads when provider is `s3` |
+| `src/main/java/kz/skills/elearning/config/VideoStorageProperties.java` | Typed media-storage config | Governs provider, bucket, endpoint, content types, file-size cap, and presign duration |
+| `src/main/resources/application.yml` | Shared runtime config | Sets port `7777`, default profile `postgres`, base datasource, CORS, JWT expiration, and video settings |
+| `src/main/resources/application-local.yml` | Local-only config | Enables H2 console and a local JWT secret fallback |
+| `src/main/resources/application-prod.yml` | Production profile overrides | Disables H2 console and expects `APP_SECURITY_JWT_SECRET` |
+| `src/main/resources/application-postgres.yml` | PostgreSQL profile config | Supplies PostgreSQL datasource settings and a postgres-profile JWT secret fallback |
 
-### Bootstrap and Config
+### Core Learner Flow
 
-| Path | Responsibility | Key logic | Why implemented this way |
-| --- | --- | --- | --- |
-| `src/main/java/kz/skills/elearning/ElearningBackendApplication.java` | Spring Boot entry point | `SpringApplication.run(...)` | Standard single-module bootstrapping |
-| `src/main/java/kz/skills/elearning/config/SecurityConfig.java` | HTTP security rules | Stateless session policy, route authorization, JWT filter registration, password encoder, `AuthenticationManager` bean, consistent `401` JSON payload | Keeps all security wiring centralized and explicit |
-| `src/main/java/kz/skills/elearning/config/WebConfig.java` | CORS setup | Allows configured local frontend origins on `/api/**` | Lightweight frontend enablement for local MVP integration |
-| `src/main/resources/application.yml` | Shared runtime config | Default `local` profile, H2 datasource, Flyway-backed schema validation, server port `7777`, JWT duration, CORS, `prod -> postgres` profile group | Keeps local startup simple while separating environment-sensitive settings |
-| `src/main/resources/application-local.yml` | Local-only runtime config | H2 console and local JWT secret fallback | Supports one-command local startup without leaking production defaults into shared config |
-| `src/main/resources/application-prod.yml` | Production-only runtime config | H2 console disabled, JWT secret required from environment | Establishes a safer baseline for non-local deployments |
-| `src/main/resources/application-postgres.yml` | Alternate DB profile | PostgreSQL datasource via env vars | Simple path to move from in-memory demo DB to persistent DB |
-| `src/main/resources/db/migration/V1__init_schema.sql` | Canonical schema bootstrap | Creates the four core tables and constraints | Moves schema ownership from Hibernate mutation to versioned migrations |
+| Path | Responsibility | Why it matters |
+| --- | --- | --- |
+| `src/main/java/kz/skills/elearning/controller/AuthController.java` | Register, login, current-user endpoints | Entry point for auth lifecycle |
+| `src/main/java/kz/skills/elearning/controller/CourseController.java` | Public catalog, course, and lesson endpoints | Read APIs used by the learner-facing frontend |
+| `src/main/java/kz/skills/elearning/controller/EnrollmentController.java` | Enrollment create/list endpoints | Public enrollment plus authenticated reporting |
+| `src/main/java/kz/skills/elearning/service/AuthService.java` | Registration/login/current-user rules | Upgrades pre-existing lead users and issues JWTs |
+| `src/main/java/kz/skills/elearning/service/CourseService.java` | Catalog and lesson DTO assembly | Keeps learner read APIs stable even as `Lesson` evolves |
+| `src/main/java/kz/skills/elearning/service/EnrollmentService.java` | Enrollment creation and visibility rules | Handles duplicate prevention, role rules, and lead-shell behavior |
+| `src/main/java/kz/skills/elearning/service/DataSeeder.java` | Demo data bootstrap | Seeds `digital-skills-kz` and two lessons when the DB is empty |
 
-### Controllers
+### Video Upload Subsystem
 
-| Path | Responsibility | Key methods | Why implemented this way |
-| --- | --- | --- | --- |
-| `src/main/java/kz/skills/elearning/controller/AppInfoController.java` | Health endpoint | `health()` returns a small map | Avoids pulling in Spring Actuator for a very small MVP |
-| `src/main/java/kz/skills/elearning/controller/AuthController.java` | Auth API | `register`, `login`, `me` | Keeps controller thin and delegates all policy to `AuthService` |
-| `src/main/java/kz/skills/elearning/controller/CourseController.java` | Public read APIs for learning content | `getCatalog`, `getCourseLanding`, `getLesson` | Groups learner-facing course read endpoints in one controller |
-| `src/main/java/kz/skills/elearning/controller/EnrollmentController.java` | Enrollment API | `enroll`, `getEnrollments` | Separates enrollment flow from course content flow |
+| Path | Responsibility | Why it matters |
+| --- | --- | --- |
+| `src/main/java/kz/skills/elearning/controller/AdminLessonVideoController.java` | Admin media endpoints | Entry point for upload-init, upload-complete, and delete |
+| `src/main/java/kz/skills/elearning/service/AdminLessonVideoService.java` | Video upload orchestration | Validates requests, persists pending uploads, verifies stored objects, updates lessons, deletes prior objects |
+| `src/main/java/kz/skills/elearning/service/video/VideoStorageService.java` | Storage abstraction | Decouples lesson media flow from concrete storage |
+| `src/main/java/kz/skills/elearning/service/video/S3VideoStorageService.java` | S3-compatible implementation | Generates presigned PUT URLs and resolves playback URLs |
+| `src/main/java/kz/skills/elearning/service/video/InMemoryVideoStorageService.java` | In-memory implementation | Used by tests and useful for non-S3 scenarios |
+| `src/main/java/kz/skills/elearning/entity/LessonVideoUpload.java` | Pending upload persistence model | Tracks a single active pending upload per lesson |
+| `src/main/java/kz/skills/elearning/repository/LessonVideoUploadRepository.java` | Pending upload repository | Supports lookup and cleanup by lesson/object key |
 
-### Services
+### Persistence and Security Foundations
 
-| Path | Responsibility | Key methods | Why implemented this way |
-| --- | --- | --- | --- |
-| `src/main/java/kz/skills/elearning/service/AuthService.java` | Registration, login, current-user projection | `register`, `login`, `me`, normalization helpers | Centralizes auth-specific user lifecycle and JWT issuance |
-| `src/main/java/kz/skills/elearning/service/CourseService.java` | Catalog and lesson read model assembly | `getCatalog`, `getCourseLanding`, `getLessonViewer`, `toLessonOutline` | Converts entities into frontend-ready DTOs in one place |
-| `src/main/java/kz/skills/elearning/service/EnrollmentService.java` | Enrollment creation and listing | `enroll`, `getEnrollments`, admin/student visibility rules, `createStudent`, `toResponse` | Holds the main business rules for enrollment, deduplication, and privacy |
-| `src/main/java/kz/skills/elearning/service/DataSeeder.java` | Demo data bootstrap | `run(...)` seeds one course and two lessons if DB is empty | Guarantees an immediately usable demo environment |
+| Path | Responsibility | Why it matters |
+| --- | --- | --- |
+| `src/main/java/kz/skills/elearning/entity/Course.java` | Course aggregate root | Owns lessons and enrollment relationships |
+| `src/main/java/kz/skills/elearning/entity/Lesson.java` | Lesson model | Now carries learner-facing `videoUrl` plus storage metadata |
+| `src/main/java/kz/skills/elearning/entity/PlatformUser.java` | User record | Represents both pre-registration leads and fully registered accounts |
+| `src/main/java/kz/skills/elearning/entity/Enrollment.java` | Course membership record | Persists learner/course relationship |
+| `src/main/java/kz/skills/elearning/security/JwtAuthenticationFilter.java` | JWT-to-principal bridge | Populates Spring Security context |
+| `src/main/java/kz/skills/elearning/security/JwtService.java` | Token generation/validation | Central source for token expiry behavior |
+| `src/main/java/kz/skills/elearning/exception/GlobalExceptionHandler.java` | Error envelope mapping | Keeps API errors consistent across auth, validation, domain, and upload failures |
+| `src/main/resources/db/migration/V1__init_schema.sql` | Baseline schema | Creates core course/lesson/user/enrollment tables |
+| `src/main/resources/db/migration/V2__add_lesson_video_uploads.sql` | Media schema evolution | Adds lesson video metadata and `lesson_video_uploads` |
 
-### Security
+### Tests and Docs
 
-| Path | Responsibility | Key methods | Why implemented this way |
-| --- | --- | --- | --- |
-| `src/main/java/kz/skills/elearning/security/JwtAuthenticationFilter.java` | Resolves `Bearer` token into authenticated principal | `doFilterInternal` | Standard stateless JWT bridge into Spring Security context |
-| `src/main/java/kz/skills/elearning/security/JwtService.java` | JWT creation and validation | `generateToken`, `extractSubject`, `isTokenValid`, `getExpirationSeconds` | Isolates token format and crypto handling from service/controller logic; now reads a proper duration-based config |
-| `src/main/java/kz/skills/elearning/security/PlatformUserDetailsService.java` | Spring Security user lookup | `loadUserByUsername` | Lets `AuthenticationManager` authenticate against persisted users |
-| `src/main/java/kz/skills/elearning/security/PlatformUserPrincipal.java` | Authenticated principal model | `from`, `getAuthorities`, `getUsername`, `getPassword` | Adapts `PlatformUser` into Spring Security's `UserDetails` contract |
-
-### Repositories
-
-| Path | Responsibility | Key methods | Why implemented this way |
-| --- | --- | --- | --- |
-| `src/main/java/kz/skills/elearning/repository/CourseRepository.java` | Course persistence access | `findAllByOrderByCreatedAtDesc`, `findBySlug` | Uses derived queries; `findBySlug` preloads lessons via `@EntityGraph` |
-| `src/main/java/kz/skills/elearning/repository/EnrollmentRepository.java` | Enrollment persistence access | `existsByCourse_IdAndStudent_Id`, `findAllByOrderByEnrolledAtDesc`, filtered finders | Encodes common list/filter use cases directly in repository method names |
-| `src/main/java/kz/skills/elearning/repository/LessonRepository.java` | Lesson lookup | `findByCourse_SlugAndSlug`, `findByCourse_SlugOrderByPositionAsc` | Efficient lesson resolution by slugs; one method remains unused in current code |
-| `src/main/java/kz/skills/elearning/repository/PlatformUserRepository.java` | User lookup | `findByEmailIgnoreCase` | Email is the single identity key in the MVP |
-
-### Entities
-
-| Path | Responsibility | Key fields / behavior | Why implemented this way |
-| --- | --- | --- | --- |
-| `src/main/java/kz/skills/elearning/entity/BaseEntity.java` | Shared audit timestamps | `createdAt`, `updatedAt`, `@PrePersist`, `@PreUpdate` | Removes repeated timestamp code across all entities and normalizes persistence timestamps to UTC |
-| `src/main/java/kz/skills/elearning/entity/Course.java` | Course aggregate root for content | Metadata + `lessons` + `enrollments`, `addLesson(...)` | Makes seeded course creation and cascade save simple |
-| `src/main/java/kz/skills/elearning/entity/Lesson.java` | Course lesson | `course`, `slug`, `content`, `position`, media metadata | Minimal content model that still supports a lesson viewer |
-| `src/main/java/kz/skills/elearning/entity/PlatformUser.java` | Learner/account record | `email`, `fullName`, `locale`, `role`, `passwordHash`, enrollments | Single table currently acts as both lead capture and authenticated account |
-| `src/main/java/kz/skills/elearning/entity/Enrollment.java` | Join entity between user and course | `course`, `student`, `status`, `enrolledAt` | Tracks course membership independently from account details |
-| `src/main/java/kz/skills/elearning/entity/EnrollmentStatus.java` | Enrollment lifecycle enum | `ENROLLED`, `COMPLETED`, `CANCELLED` | Allows simple future evolution without adding another table |
-| `src/main/java/kz/skills/elearning/entity/UserRole.java` | User authorization enum | `STUDENT`, `ADMIN` | Prepares for RBAC without implementing admin tooling yet |
-
-### DTOs
-
-| Path | Responsibility | Key structure | Why implemented this way |
-| --- | --- | --- | --- |
-| `src/main/java/kz/skills/elearning/dto/ApiErrorResponse.java` | Standard error payload | timestamp, status, error, message, validation errors | Single JSON envelope for most failures |
-| `src/main/java/kz/skills/elearning/dto/AuthResponse.java` | Auth success payload | token + expiry + current user snapshot | Convenient frontend bootstrap after login/register |
-| `src/main/java/kz/skills/elearning/dto/CurrentUserResponse.java` | Public user projection | `fromEntity`, `fromPrincipal` | Avoids returning full entity and password hash |
-| `src/main/java/kz/skills/elearning/dto/LoginRequest.java` | Login input | email, password + validation | Minimal credential contract |
-| `src/main/java/kz/skills/elearning/dto/RegisterRequest.java` | Registration input | full name, email, password, locale + validation | Captures just enough profile data for the MVP |
-| `src/main/java/kz/skills/elearning/dto/CourseSummaryResponse.java` | Catalog item payload | course metadata + lesson count | Compact response for listing screen |
-| `src/main/java/kz/skills/elearning/dto/CourseLandingResponse.java` | Course detail payload | course metadata + lesson outline list | Bundles everything needed for a landing page in one call |
-| `src/main/java/kz/skills/elearning/dto/LessonOutlineResponse.java` | Course landing lesson preview | slug, title, position, duration, summary | Decouples lesson listing from full lesson body |
-| `src/main/java/kz/skills/elearning/dto/LessonViewerResponse.java` | Lesson page payload | course refs + lesson metadata + content | Supports a direct lesson viewer without extra joins client-side |
-| `src/main/java/kz/skills/elearning/dto/EnrollmentRequest.java` | Enrollment input | course slug + learner identity + locale | Designed for public form submission without prior auth |
-| `src/main/java/kz/skills/elearning/dto/EnrollmentResponse.java` | Enrollment output | enrollment id, student snapshot, course snapshot, status, timestamp | Gives frontend/admin enough context without extra fetch |
-
-### Exceptions
-
-| Path | Responsibility | Key behavior | Why implemented this way |
-| --- | --- | --- | --- |
-| `src/main/java/kz/skills/elearning/exception/ResourceNotFoundException.java` | Missing resource signal | Runtime exception | Keeps service code concise |
-| `src/main/java/kz/skills/elearning/exception/DuplicateEnrollmentException.java` | Duplicate enrollment signal | Runtime exception | Expresses domain rule cleanly |
-| `src/main/java/kz/skills/elearning/exception/UserAlreadyExistsException.java` | Registration conflict signal | Runtime exception | Distinguishes account conflict from generic DB error |
-| `src/main/java/kz/skills/elearning/exception/InvalidCredentialsException.java` | Login/auth failure signal | Runtime exception | Keeps auth-specific failure messaging explicit |
-| `src/main/java/kz/skills/elearning/exception/GlobalExceptionHandler.java` | Converts exceptions to API JSON responses | Specific handlers + fallback handler, including `403` access-denied handling | Centralized API contract for failures |
-
-### Tests
-
-| Path | Responsibility | Key logic | Why implemented this way |
-| --- | --- | --- | --- |
-| `src/test/java/kz/skills/elearning/ApiIntegrationTests.java` | End-to-end API verification | Auth flow, route protection, admin/student enrollment visibility, duplicate enrollment behavior | Locks down the backend improvements with executable scenarios |
-| `src/test/java/kz/skills/elearning/ElearningBackendApplicationTests.java` | Smoke test | `contextLoads()` | Confirms Spring context starts, but does not validate business behavior |
+| Path | Responsibility | Why it matters |
+| --- | --- | --- |
+| `src/test/java/kz/skills/elearning/ApiIntegrationTests.java` | Main behavior regression suite | Covers auth, enrollment visibility, and admin video upload workflow |
+| `src/test/java/kz/skills/elearning/InMemoryVideoStorageServiceTests.java` | Storage unit test | Verifies the in-memory provider contract |
+| `src/test/java/kz/skills/elearning/PostgresProfileStartupTests.java` | Profile smoke test | Confirms `prod` activates the `postgres` profile group cleanly |
+| `src/test/java/kz/skills/elearning/ElearningBackendApplicationTests.java` | Context smoke test | Confirms app startup under test overrides |
+| `README.md` | Human-readable project intro | Currently lags behind the codebase in a few important areas |
+| `docs/demo-commands.sh` | Demo script | Still shows only the learner flow |
+| `docs/mvp-schema.sql` | Legacy schema doc | No longer reflects the media-upload schema and should not be treated as canonical |
 
 ## Core Business Logic Explained
 
-### 1. Anonymous enrollment and later account creation share one user table
+### 1. Anonymous enrollment and later registration share one user row
 
-This is the most important MVP design shortcut.
+This remains the most important design shortcut in the app.
 
-- `EnrollmentService` creates a `PlatformUser` if an email does not exist yet.
-- That placeholder user may have no `passwordHash`.
-- `AuthService.register` checks whether a user with that email already exists.
-- If the user exists but has no password yet, the service upgrades that same row into a full account instead of throwing a conflict.
+- `EnrollmentService` finds or creates a `PlatformUser` by normalized email.
+- A user created from enrollment may have no `passwordHash`.
+- `AuthService.register` upgrades that same record later if the email already exists without a password.
+- `AuthService.login` rejects passwordless shells and tells the caller to register first.
 
-Why this was likely done:
+Why this exists:
 
-- prevents duplicate person records,
-- preserves enrollments created before account registration,
-- keeps the signup funnel friction low,
-- avoids a second "lead" table.
+- preserves enrollments created before registration,
+- avoids duplicate people records,
+- keeps the signup funnel low-friction,
+- avoids a separate lead table.
 
 Tradeoff:
 
-- `PlatformUser` currently mixes two lifecycle states: anonymous lead and authenticated account.
+- `PlatformUser` mixes lead-style and fully authenticated lifecycles in one table.
 
-### 2. DTO mapping happens inside services
+### 2. Lesson video upload is a two-step admin workflow
 
-Services both execute business logic and assemble response DTOs. This reduces project size and ceremony, which is useful for an MVP, but it tightly couples service methods to current API shapes.
+The new media subsystem works like this:
 
-### 3. JPA entity graphs are used selectively
+1. `initiateUpload` validates content type and max size, builds an object key, deletes any previous pending row for the lesson, stores a new `LessonVideoUpload`, and returns upload instructions.
+2. The client uploads directly to the storage provider.
+3. `completeUpload` reloads the pending row, checks expiry, verifies the uploaded object metadata, writes lesson video metadata back to `Lesson`, clears the pending row, and best-effort deletes any previously attached object.
+4. `deleteVideo` clears lesson video metadata and best-effort deletes the stored object.
 
-The code explicitly uses `@EntityGraph` for:
+Important implication:
 
-- course lookup with lessons,
-- lesson lookup with course,
-- enrollment listing with course and student.
+- the learner-facing lesson route did not change shape; the media subsystem updates `Lesson.videoUrl`, and `CourseService` simply returns that value.
 
-This is a targeted workaround for `open-in-view: false` and lazy-loading issues. It is a sign that the project is aware of fetch boundaries, but the approach is still ad hoc rather than standardized.
+### 3. Role boundaries are simple but real
 
-## Infrastructure & Environment
+- Public: health, catalog, course detail, lesson viewer, register, login, and enrollment creation
+- Authenticated: `/api/auth/me`, enrollment listing
+- Admin only: `/api/admin/**`
 
-### Build and Packaging
+Students can only list their own enrollments. Admins can filter enrollments by `courseSlug`, `email`, or both.
 
-- Build tool: Maven
-- Packaging: Spring Boot executable JAR
-- Plugin: `spring-boot-maven-plugin`
+### 4. DTO assembly still happens in services
 
-### Database
+The services both execute business rules and construct response DTOs. That keeps the codebase small and easy to extend quickly, but it also couples service methods to the API contract.
 
-Default profile:
+## Infrastructure and Environment
 
-- H2 in-memory
-- JDBC URL: `jdbc:h2:mem:elearningdb;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE`
-- default Spring profile: `local`
-- Hibernate DDL mode: `validate`
-- Flyway owns schema creation
-- H2 console enabled at `/h2-console` only in `local`
+### Profiles and Database
 
-Alternate profile:
+Current config truth:
 
-- PostgreSQL
-- profile activation: `prod` also enables `postgres`
-- Config file: `application-postgres.yml`
-- Expected env vars: `POSTGRES_URL`, `POSTGRES_USER`, `POSTGRES_PASSWORD`
+- `application.yml` sets `spring.profiles.default: postgres`
+- `application.yml` also groups `prod -> postgres`
+- base datasource values in `application.yml` still point at H2
+- `application-postgres.yml` overlays PostgreSQL datasource settings
+- `application-local.yml` enables the H2 console and a local JWT secret fallback
+- Hibernate runs with `ddl-auto: validate`
+- Flyway owns schema creation and evolution
+
+Practical takeaway:
+
+- the repo is no longer best described as "local profile by default"
+- local H2 console support still exists, but only when `local` is active
+- the real schema source of truth is the Flyway migration folder, not `docs/mvp-schema.sql`
+
+### Video Storage
+
+Default media config in `application.yml`:
+
+- provider: `s3`
+- bucket: `elearning-videos`
+- endpoint: `http://localhost:9000`
+- public base URL: `http://localhost:9000/elearning-videos`
+- region: `us-east-1`
+- lesson prefix: `lessons`
+- max file size: `536870912` bytes
+- allowed content types: `video/mp4`, `video/webm`
+- presign duration: `15m`
+- path-style access: enabled
+
+Interpretation:
+
+- the code is written for S3-compatible storage, including MinIO-style local setups
+- tests switch the provider to `in-memory` so they do not depend on real object storage
 
 ### Security
 
 - Stateless JWT auth
 - BCrypt password hashing
-- `APP_SECURITY_JWT_SECRET` required for `prod`
-- local fallback secret isolated to `application-local.yml`
+- `ApiErrorResponse` is used for application-generated errors
+- `SecurityConfig` also returns a matching JSON envelope for unauthenticated `401` responses
+- `@EnableMethodSecurity` is enabled, though the main authorization rules are still URL-based
 
-### CORS
+### Tooling and Delivery
 
-Allowed origins by default:
-
-- `http://localhost:3000`
-- `http://localhost:5173`
-
-### CI/CD and Containerization
-
-No CI/CD configuration was found:
+No CI/CD or containerization files were found:
 
 - no `.github/workflows`
-- no GitLab CI
 - no Dockerfile
 - no Docker Compose
+- no Maven wrapper script
 
 Implication:
 
-- local development is easy,
-- environment parity and deployment repeatability are currently weak.
+- the app is easy to read and run in a configured IDE,
+- but repeatable CLI/bootstrap workflows are weaker than the code itself.
 
-## Verified Current State
+## Current State Verified From Source
 
-### Confirmed by local build execution
+The following items are directly supported by the current codebase:
 
-- `mvn test` succeeds
-- Spring Boot context starts
-- Flyway applies the initial schema migration
-- `DataSeeder` inserts one seeded course with two seeded lessons
-- There are 9 automated tests: 1 context smoke test, 7 API integration tests, and 1 `prod+postgres` profile startup test
+- package layout is `config`, `controller`, `dto`, `entity`, `exception`, `repository`, `security`, `service`, and `service/video`
+- the seeded course remains `digital-skills-kz`
+- the seed data includes two lessons
+- seeded lessons still start with example `videoUrl` values even before admin-managed uploads happen
+- lesson viewer responses include `videoUrl`
+- admin media endpoints are present and guarded by `ROLE_ADMIN`
+- the codebase currently contains 15 tests:
+  - 12 integration tests in `ApiIntegrationTests`
+  - 1 unit test for `InMemoryVideoStorageService`
+  - 1 postgres-profile startup test
+  - 1 context load smoke test
+- tests use `app.media.video.provider=in-memory` when exercising upload behavior
+- no in-repo Codex `SKILL.md` or automation files were found
 
-### Effective runtime behavior inferred from code and build
+The following claims were not re-executed from this session:
 
-- Default HTTP port is `7777`, not `8080`
-- JWT expiry is configured via `app.security.jwt.expiration` and currently resolves to `24h`
-- `GET /api/enrollments` requires authentication
-- Students can only list their own enrollments
-- Admins can filter enrollments by `courseSlug`, `email`, or both
-- Authentication and roles are implemented and documented
-- Security-generated `401` and application-generated `4xx/5xx` errors now share the same JSON envelope
-- H2 console is available only in `local`
-- Shared config no longer commits a production JWT secret
+- `mvn test` status
+- full app startup against a real PostgreSQL instance
+- live S3/MinIO upload behavior
 
-## Resolved Since Initial Audit
+## Documentation Drift and Risk Areas
 
-The first audit found several code/documentation mismatches. They have now been aligned:
+### Documentation drift that should be assumed until checked
 
-| Area | Previous issue | Current state |
-| --- | --- | --- |
-| Port | README and demo script used `8080` | README, script, and config all use `7777` |
-| Enrollment listing access | Docs implied public visibility | Docs now state the authenticated admin/student behavior correctly |
-| Auth feature maturity | Docs treated auth as future work | Docs now describe JWT auth, login, and `me` endpoint |
-| JWT expiration config | Property name and code disagreed | `JwtService` now reads the duration-based `app.security.jwt.expiration` property |
-| SQL schema doc | `docs/mvp-schema.sql` missed `password_hash` and `role` | Schema doc now includes both fields |
-| Schema ownership | Hibernate mutated schema directly | Flyway migration now owns initial schema creation |
+- `README.md` still describes the project largely as the older learner MVP
+- `README.md` says the default profile is `local`, but config now says `postgres`
+- `docs/demo-commands.sh` does not include the admin video upload flow
+- `docs/mvp-schema.sql` does not include the `V2` lesson video upload schema
 
-Conclusion:
+### Notable technical risks
 
-- the source of truth is the Java code plus `application.yml`,
-- companion documentation has been synchronized with the current backend behavior.
+1. Default profile surprise
+   The default profile is `postgres`, which materially changes startup expectations compared with the older docs.
 
-## Context for Future Agents
+2. Sensitive config defaults are still present in profile files
+   `application-postgres.yml` includes fallback PostgreSQL and JWT values, so secret externalization is not as strict as earlier documentation implied.
 
-### What to preserve
+3. Pending upload cleanup is request-driven, not scheduled
+   Expired pending rows are cleaned during completion attempts, but there is no background cleanup process.
 
-- Keep the public catalog/course/lesson flow fast and dependency-light.
-- Preserve the "enroll first, register later on same email" behavior unless product explicitly changes that funnel.
-- Keep response DTOs stable unless frontend is updated in parallel.
+4. Upload verification is metadata-based
+   The completion flow checks content type and size, but it does not do deeper media validation, checksums, transcoding, or virus scanning.
 
-### Main technical debt / weak spots
+5. Delivery automation is thin
+   There is still no CI pipeline, container story, or checked-in local bootstrap wrapper.
 
-1. Security hardening is improved but not complete
-   JWT secret is now externalized for `prod` and H2 console is local-only, but there is still no secret rotation strategy, no HTTPS/TLS story, and no environment-specific deployment template.
+## Recommended Next Engineering Steps
 
-2. Test coverage is better but still limited
-   There are now integration tests for auth/enrollment flows, public/protected route regression, and `prod+postgres` startup, but not for catalog edge cases, validation matrices, or repository-specific performance behavior.
-
-3. Migration strategy exists but is minimal
-   Flyway owns the initial schema, but there is only one baseline migration and no process yet for evolving production data safely across multiple versions.
-
-4. Mixed user lifecycle in one table
-   `PlatformUser` represents both pre-registration leads and fully authenticated accounts.
-
-5. Observability is thin
-   No structured logging, no audit logging, no actuator metrics, no explicit security event logging.
-
-6. Fetch strategy is hand-tuned, not systematic
-   `@EntityGraph` is used selectively. Catalog lesson-count loading may become an N+1 hotspot as data grows.
-
-7. Role model is still shallow
-   `ADMIN` exists and is now meaningful for enrollment visibility, but there is still no admin management UI or policy granularity.
-
-### Recommended next engineering steps
-
-1. Expand integration tests for:
-   - course catalog and lesson edge cases,
-   - validation errors,
-   - admin vs student access boundaries on any new endpoints,
-   - PostgreSQL profile startup.
-
-2. Introduce migrations:
-   - Flyway is the most natural next step.
-
-3. Split user states more explicitly:
-   - either formalize lead/account states in `PlatformUser`,
-   - or separate lead capture from registered identity if product complexity grows.
-
-4. Harden production security further:
-   - add deployment-time validation for required secrets,
-   - disable or narrow SQL logging outside local,
-   - document the expected prod env vars and profile usage.
-
-5. Decide target architecture before scaling:
-   - if adding quizzes, progress, instructor tooling, and admin moderation, keep layered monolith but introduce clearer bounded modules.
-
-### Safe extension points
-
-- New learner-facing endpoints should usually land beside existing controller/service/repository patterns.
-- Admin functionality should probably become a separate controller/service slice protected by `ROLE_ADMIN`.
-- Progress tracking naturally fits as a new entity related to `Enrollment` and `Lesson`.
-- Localized lesson content should likely not be added as extra columns on `Lesson`; a separate localized content table or content aggregate will scale better.
+1. Update `README.md`, `docs/demo-commands.sh`, and `docs/mvp-schema.sql` so they stop disagreeing with the Java/YAML/Flyway source of truth.
+2. Decide whether the intended default runtime should really be `postgres`; if not, move back to `local` as the default profile.
+3. Remove committed fallback secrets/credentials from non-local profile files and document required env vars explicitly.
+4. Add an integration smoke path for real S3-compatible storage, or at least a documented MinIO developer flow.
+5. Add cleanup/expiry handling for stale `lesson_video_uploads` rows.
+6. If media workflows keep growing, split lesson-content/media concerns into a clearer bounded module.
 
 ## Short Instruction For Future AI Developers
 
-Use the Java code plus this blueprint as the source of truth.
+Use the Java code, YAML config, Flyway migrations, and tests as the source of truth. Treat older docs as helpful but fallible.
 
 Before changing behavior:
 
-1. check `SecurityConfig` to confirm route visibility,
-2. check service-layer normalization rules,
-3. check whether a repository method relies on lazy loading or `@EntityGraph`,
-4. check if seeded demo data or docs need to be updated together,
-5. add tests before refactoring auth, enrollment, or entity relationships.
+1. check `SecurityConfig` for route visibility and admin boundaries,
+2. check `application.yml` plus active profile overlays before assuming startup behavior,
+3. check Flyway migrations instead of `docs/mvp-schema.sql` for schema truth,
+4. check `EnrollmentService` and `AuthService` before changing user/account lifecycle behavior,
+5. check `AdminLessonVideoService`, `Lesson`, and `VideoStorageService` before touching lesson media behavior,
+6. update tests and companion docs together when changing public contracts.
 
-If you only have this document and not the code, the most important mental model is:
+If you only remember one mental model, remember this:
 
-- this is a small Spring Boot layered monolith,
-- the learner journey is catalog -> enrollment -> optional account -> lesson,
-- `PlatformUser` is the pivot between authentication and enrollment,
-- documentation files currently lag behind runtime truth.
+- this is a layered Spring Boot backend,
+- learner APIs are still the stable public face,
+- admin media upload is now a first-class subsystem,
+- the current truth is in code and migrations, not in the older docs.

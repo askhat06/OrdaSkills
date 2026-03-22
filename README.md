@@ -1,29 +1,29 @@
-# E-learning Platform MVP Backend
+# E-learning Platform Backend
 
-Java Spring Boot backend for the Kazakhstan skills-development MVP.
+Spring Boot backend for a Kazakhstan-focused e-learning platform. The app supports the learner MVP flow plus an admin-only lesson video upload workflow.
 
-## Included in this backend
+## What this backend does
 
-- Course catalog endpoint
-- Course landing page endpoint
-- Enrollment API with validation and DB persistence
-- Lesson viewer endpoint
-- JWT-based registration, login, and current-user endpoint
-- H2 in-memory database for demoing enrollment records
-- Seeded course and lessons so the frontend has data immediately
+- serves a seeded course catalog
+- returns course landing pages and lesson viewer payloads
+- supports anonymous enrollment with DB persistence
+- supports JWT-based register, login, and current-user endpoints
+- lets authenticated users view enrollments with role-based access rules
+- lets admins upload, finalize, and delete lesson videos through storage-backed APIs
 
 ## Tech stack
 
-- Java 17+
+- Java 17
 - Spring Boot 3.5.11
 - Spring Web
 - Spring Data JPA
 - Bean Validation
 - Spring Security
-- JWT (JJWT)
+- JWT via JJWT
 - Flyway
-- H2 database
-- PostgreSQL profile for persistent storage
+- H2 support
+- PostgreSQL profile support
+- AWS S3 SDK for S3-compatible media storage
 
 ## Main data model
 
@@ -31,24 +31,44 @@ Java Spring Boot backend for the Kazakhstan skills-development MVP.
 - `Lesson`
 - `PlatformUser`
 - `Enrollment`
+- `LessonVideoUpload`
 
 ## API routes
 
-### 1) Course catalog
+### Public routes
 
-`GET /api/courses`
+- `GET /api/health`
+- `GET /api/courses`
+- `GET /api/courses/{slug}`
+- `GET /api/courses/{courseSlug}/lessons/{lessonSlug}`
+- `POST /api/enrollments`
+- `POST /api/auth/register`
+- `POST /api/auth/login`
 
-### 0) Health check
+### Authenticated routes
 
-`GET /api/health`
+- `GET /api/auth/me`
+- `GET /api/enrollments`
 
-### Auth
+Notes:
 
-#### Register
+- students can view only their own enrollments
+- admins can view all enrollments and optionally filter by `courseSlug`, `email`, or both
 
-`POST /api/auth/register`
+### Admin-only media routes
 
-Example:
+- `POST /api/admin/courses/{courseSlug}/lessons/{lessonSlug}/video-upload`
+- `POST /api/admin/courses/{courseSlug}/lessons/{lessonSlug}/video-upload/complete`
+- `DELETE /api/admin/courses/{courseSlug}/lessons/{lessonSlug}/video`
+
+The media flow is two-step:
+
+1. initialize an upload to get an object key, upload URL, required headers, and playback URL
+2. upload the object to storage, then call the `complete` endpoint so the lesson starts serving the new `videoUrl`
+
+## Example requests
+
+### Register
 
 ```bash
 curl -X POST http://localhost:7777/api/auth/register \
@@ -61,39 +81,19 @@ curl -X POST http://localhost:7777/api/auth/register \
   }'
 ```
 
-#### Login
-
-`POST /api/auth/login`
-
-#### Current user
-
-`GET /api/auth/me`
-
-### 2) Course landing page
-
-`GET /api/courses/{slug}`
-
-Example:
+### Course landing page
 
 ```bash
 curl http://localhost:7777/api/courses/digital-skills-kz
 ```
 
-### 3) Lesson viewer
-
-`GET /api/courses/{courseSlug}/lessons/{lessonSlug}`
-
-Example:
+### Lesson viewer
 
 ```bash
 curl http://localhost:7777/api/courses/digital-skills-kz/lessons/intro-to-digital-skills
 ```
 
-### 4) Enrollment API
-
-`POST /api/enrollments`
-
-Example:
+### Enroll
 
 ```bash
 curl -X POST http://localhost:7777/api/enrollments \
@@ -106,34 +106,95 @@ curl -X POST http://localhost:7777/api/enrollments \
   }'
 ```
 
-### 5) View enrollment records
+### List enrollments
 
-`GET /api/enrollments`
+```bash
+curl http://localhost:7777/api/enrollments \
+  -H "Authorization: Bearer <token>"
+```
 
-Authentication required. Students can view only their own enrollments. Admins can view all enrollments and use filters.
+### Initiate admin video upload
 
-Optional admin filters:
-
-- `GET /api/enrollments?courseSlug=digital-skills-kz`
-- `GET /api/enrollments?email=test.student@example.com`
-- `GET /api/enrollments?courseSlug=digital-skills-kz&email=test.student@example.com`
+```bash
+curl -X POST http://localhost:7777/api/admin/courses/digital-skills-kz/lessons/intro-to-digital-skills/video-upload \
+  -H "Authorization: Bearer <admin-token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "fileName": "lesson.mp4",
+    "contentType": "video/mp4",
+    "sizeBytes": 1048576
+  }'
+```
 
 ## Demo flow
 
-1. Open the course landing page endpoint.
-2. Submit the enrollment request for a test student.
+1. Open the course landing page.
+2. Submit an enrollment for a test learner.
 3. Register or log in to obtain a JWT.
-4. Open the lesson viewer endpoint.
-5. Show the saved enrollment with authenticated `GET /api/enrollments`.
-6. Optionally open H2 Console at `http://localhost:7777/h2-console`.
+4. Open the lesson viewer.
+5. Use authenticated `GET /api/enrollments` to confirm saved enrollment data.
+6. If running with the `local` profile, optionally inspect H2 at `http://localhost:7777/h2-console`.
+7. If using an admin account, initialize and complete a lesson video upload to replace the lesson's `videoUrl`.
 
-H2 connection values:
+## Running the app
+
+There is no Maven wrapper in this repo, so use a globally installed Maven or run the app from your IDE.
+
+### Default runtime behavior
+
+The code currently sets the default Spring profile to `postgres`.
+
+That means:
+
+- launching the app without an explicit profile will activate PostgreSQL-oriented config
+- `prod` also activates the `postgres` profile group
+- H2 console is not available unless you explicitly run with the `local` profile
+
+Default URL:
+
+- `http://localhost:7777`
+
+### Run with the current default profile
+
+```bash
+mvn spring-boot:run
+```
+
+Relevant config comes from:
+
+- `src/main/resources/application.yml`
+- `src/main/resources/application-postgres.yml`
+
+PostgreSQL-related env vars:
+
+- `POSTGRES_URL`
+- `POSTGRES_USER`
+- `POSTGRES_PASSWORD`
+
+JWT env vars:
+
+- `APP_SECURITY_JWT_SECRET`
+- `APP_SECURITY_JWT_SECRET_POSTGRES`
+
+### Run in local H2 demo mode
+
+```bash
+mvn spring-boot:run -Dspring-boot.run.profiles=local
+```
+
+Local profile behavior:
+
+- enables H2 console at `/h2-console`
+- keeps the seeded course/demo flow easy to inspect
+- uses `application-local.yml`
+
+H2 console values:
 
 - JDBC URL: `jdbc:h2:mem:elearningdb`
 - Username: `sa`
-- Password: *(blank)*
+- Password: blank
 
-Example query in H2:
+Example query:
 
 ```sql
 SELECT e.id, u.full_name, u.email, c.title, e.status, e.enrolled_at
@@ -142,47 +203,35 @@ JOIN platform_users u ON e.student_id = u.id
 JOIN courses c ON e.course_id = c.id;
 ```
 
-## Run locally
+## Media storage configuration
 
-Import the project into IntelliJ IDEA or another Java IDE, then run `ElearningBackendApplication`.
+Video uploads are configured under `app.media.video.*`.
 
-Or run with Maven installed globally:
+Important settings:
 
-```bash
-mvn spring-boot:run
-```
+- provider defaults to `s3`
+- default endpoint is `http://localhost:9000`
+- default public base URL is `http://localhost:9000/elearning-videos`
+- allowed content types are `video/mp4` and `video/webm`
+- default max file size is `536870912` bytes
+- default presign duration is `15m`
 
-Default local URL:
+The code is written for S3-compatible storage. Tests switch the provider to `in-memory`.
 
-- `http://localhost:7777`
+## Schema and persistence
 
-Profiles:
-
-- default profile: `local`
-- production profile group: `prod` which also activates `postgres`
-
-JWT configuration:
-
-- local/dev fallback secret comes from `APP_SECURITY_JWT_SECRET_LOCAL`
-- production secret must come from `APP_SECURITY_JWT_SECRET`
-- token lifetime is configured via `app.security.jwt.expiration`
-
-Database schema:
-
-- schema is managed by Flyway migrations in `src/main/resources/db/migration`
-- JPA now validates the schema instead of mutating it automatically
+- Flyway migrations in `src/main/resources/db/migration` are the schema source of truth
+- JPA runs with `ddl-auto: validate`
+- `docs/mvp-schema.sql` is now only a legacy reference and does not include the media-upload schema
 
 ## Current implementation notes
 
-- The app uses a seeded course so the demo works on first start.
-- JWT expiration is configured via `app.security.jwt.expiration` and defaults to `24h`.
-- Anonymous enrollment can create a user shell that is later upgraded during registration with the same email.
-- H2 console is available only in the `local` profile.
+- the app seeds one course, `digital-skills-kz`, with two lessons if the database is empty
+- lesson viewer responses include `videoUrl`
+- anonymous enrollment can create a user shell that is later upgraded during registration with the same email
+- `/api/admin/**` requires `ROLE_ADMIN`
+- the repo currently contains integration and smoke tests for auth, enrollments, profile startup, and admin video upload behavior
 
-## Natural next additions
+## More project detail
 
-- progress tracking table and endpoints
-- localized lesson content per language
-- quiz / assessment entities and submission APIs
-- instructor CRUD tools for courses and lessons
-- stronger production hardening for secrets, H2 console exposure, and deployment automation
+For the AI-focused architecture summary and repo map, see `docs/PROJECT_BLUEPRINT.md`.
