@@ -19,7 +19,7 @@
 | Item | Status | Notes |
 | --- | --- | --- |
 | Course catalog | Complete | Public catalog API exists and is intended for the external frontend |
-| Progress tracking | Not implemented | Still backlog |
+| Progress tracking | Complete | Backend course progress tracking now exists with explicit `CourseProgress` / `CourseProgressStep` state, authenticated progress APIs, reset support, repeat attempts, and backend-owned percent calculation |
 | Localized content | Partial | Locale fields exist, but no localized content model or full UI yet |
 | Assessments | Not implemented | Still backlog |
 | Instructor tools | Partial | Admin course CRUD exists, but broader instructor tooling is still backlog |

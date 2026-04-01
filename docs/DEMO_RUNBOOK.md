@@ -8,7 +8,8 @@ Demonstrate the MVP flow end to end:
 2. enroll a test student
 3. log in
 4. open the lesson viewer
-5. show the saved enrollment in the database
+5. verify course progress for the learner
+6. show the saved enrollment and progress in the database
 
 ## Start the backend
 
@@ -60,7 +61,28 @@ Important:
 - click the first lesson
 - confirm the lesson viewer renders title, metadata, lesson content, and `videoUrl` playback
 
-### 5. Show the stored enrollment in the database
+### 5. Verify course progress
+
+Use the authenticated learner token and verify backend-owned progress state:
+
+```bash
+curl -X POST http://localhost:7777/api/progress/courses/digital-skills-kz/start \
+  -H "Authorization: Bearer <accessToken>"
+
+curl -X POST http://localhost:7777/api/progress/courses/digital-skills-kz/steps/intro-to-digital-skills/complete \
+  -H "Authorization: Bearer <accessToken>"
+
+curl http://localhost:7777/api/progress/courses/digital-skills-kz \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+Confirm that:
+
+- `status` moves to `IN_PROGRESS` or `COMPLETED` depending on the steps you completed
+- `percentComplete` comes from the backend response
+- `steps` contains explicit per-lesson progress rows
+
+### 6. Show the stored enrollment and progress in the database
 
 - open `http://localhost:7777/h2-console`
 - use:
@@ -75,6 +97,20 @@ SELECT e.id, u.full_name, u.email, c.title, e.status, e.enrolled_at
 FROM enrollments e
 JOIN platform_users u ON e.student_id = u.id
 JOIN courses c ON e.course_id = c.id;
+```
+
+Then run:
+
+```sql
+SELECT cp.id, u.email, c.slug, cp.status, cp.completed_steps, cp.total_steps, cp.percent_complete, cp.attempt_count
+FROM course_progress cp
+JOIN platform_users u ON cp.student_id = u.id
+JOIN courses c ON cp.course_id = c.id;
+
+SELECT cps.progress_id, cps.step_order, l.slug, cps.status, cps.completed_at
+FROM course_progress_steps cps
+JOIN lessons l ON cps.lesson_id = l.id
+ORDER BY cps.progress_id, cps.step_order;
 ```
 
 ## Optional admin demo
@@ -95,4 +131,5 @@ The demo is successful when:
 - the enrollment API persists a student
 - login works
 - the lesson viewer opens
-- the enrollment record is visible in the database
+- learner progress is visible through the backend progress API
+- the enrollment and progress records are visible in the database
