@@ -29,15 +29,18 @@ public class EnrollmentService {
     private final EnrollmentRepository enrollmentRepository;
     private final CourseRepository courseRepository;
     private final PlatformUserRepository platformUserRepository;
+    private final ProgressService progressService;
 
     public EnrollmentService(
             EnrollmentRepository enrollmentRepository,
             CourseRepository courseRepository,
-            PlatformUserRepository platformUserRepository
+            PlatformUserRepository platformUserRepository,
+            ProgressService progressService
     ) {
         this.enrollmentRepository = enrollmentRepository;
         this.courseRepository = courseRepository;
         this.platformUserRepository = platformUserRepository;
+        this.progressService = progressService;
     }
 
     public EnrollmentResponse enroll(EnrollmentRequest request) {
@@ -70,6 +73,7 @@ public class EnrollmentService {
         enrollment.setEnrolledAt(LocalDateTime.now(ZoneOffset.UTC));
 
         Enrollment saved = enrollmentRepository.save(enrollment);
+        progressService.initializeProgressForEnrollment(saved);
         return toResponse(saved);
     }
 

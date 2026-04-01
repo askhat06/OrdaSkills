@@ -1,6 +1,6 @@
 # Orda Skills Backend
 
-This repository is the Spring Boot backend for Orda Skills. It is the contract source of truth for auth, courses, lessons, enrollments, admin course CRUD, and admin lesson video workflows.
+This repository is the Spring Boot backend for Orda Skills. It is the contract source of truth for auth, courses, lessons, enrollments, course progress tracking, admin course CRUD, and admin lesson video workflows.
 
 The canonical frontend is not stored in this repository. Per the current project architecture, the real frontend lives in the separate `oyn_front` / `jiyuu` React project and integrates with this backend over HTTP.
 
@@ -10,6 +10,7 @@ The canonical frontend is not stored in this repository. Per the current project
 - Flyway-managed database schema
 - JWT auth and role-based access rules
 - rate limiting for public auth and enrollment endpoints
+- explicit course progress tracking with per-lesson steps
 - admin course CRUD endpoints
 - admin lesson video upload endpoints
 - backend tests and integration docs
@@ -47,6 +48,12 @@ If you are a frontend AI agent, use [docs/PROJECT_BLUEPRINT.md](C:/GPT/OrdaSkill
 
 - `GET /api/auth/me`
 - `GET /api/enrollments`
+- `GET /api/progress/courses/{courseSlug}`
+- `POST /api/progress/courses/{courseSlug}/start`
+- `PUT /api/progress/courses/{courseSlug}/current-step`
+- `POST /api/progress/courses/{courseSlug}/steps/{lessonSlug}/complete`
+- `POST /api/progress/courses/{courseSlug}/complete`
+- `POST /api/progress/courses/{courseSlug}/reset`
 
 ### Admin
 
@@ -67,9 +74,11 @@ These backend behaviors are important for the external frontend:
 - non-local runtime requires explicit env vars for PostgreSQL, JWT, and S3-compatible media
 - `401` covers missing, expired, malformed, and deleted-user JWT cases
 - `403` covers authenticated users without the required role
+- `400` on progress routes can mean the learner is authenticated but not enrolled in the requested course
 - `409` is used for duplicate enrollment and unsafe course deletion
 - `429` is used for login, registration, and enrollment rate limiting
 - `204` responses must not be parsed as JSON
+- course progress is backend-owned; `percentComplete` should not be recomputed on the frontend
 
 For the full frontend-agent handoff, see:
 
@@ -128,6 +137,7 @@ Coverage includes:
 - auth flow
 - deleted-user JWT fallback to `401`
 - anonymous enrollment non-mutation rules
+- course progress bootstrap, lifecycle, reset, repeat attempts, and zero-step completion
 - rate limiting
 - admin course CRUD
 - admin lesson video upload behavior
@@ -145,7 +155,8 @@ The intended MVP demo still is:
 2. enroll a test student
 3. log in
 4. open the lesson viewer
-5. inspect the enrollment in H2 or PostgreSQL
+5. inspect course progress for the learner
+6. inspect the enrollment in H2 or PostgreSQL
 
 Use [docs/DEMO_RUNBOOK.md](C:/GPT/OrdaSkills/docs/DEMO_RUNBOOK.md) for the backend-side operator flow.
 

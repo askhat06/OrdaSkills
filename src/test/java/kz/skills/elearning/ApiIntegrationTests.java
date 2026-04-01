@@ -49,6 +49,7 @@ class ApiIntegrationTests {
 
     private static final String COURSE_SLUG = "digital-skills-kz";
     private static final String LESSON_SLUG = "intro-to-digital-skills";
+    private static final String SECOND_LESSON_SLUG = "online-collaboration-basics";
     private static final String DEFAULT_PASSWORD = "Password123!";
 
     @Autowired
@@ -143,6 +144,13 @@ class ApiIntegrationTests {
     @Test
     void protectedAuthMeRequiresToken() throws Exception {
         mockMvc.perform(get("/api/auth/me"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("Authentication required"));
+    }
+
+    @Test
+    void progressEndpointsRequireAuthentication() throws Exception {
+        mockMvc.perform(get("/api/progress/courses/{courseSlug}", COURSE_SLUG))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.message").value("Authentication required"));
     }
@@ -258,6 +266,122 @@ class ApiIntegrationTests {
                         ))))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.message").value("Invalid email or password"));
+    }
+
+    @Test
+    void enrollmentInitializesNotStartedCourseProgress() throws Exception {
+        createEnrollment("Student One", "student.one@example.com", "en-KZ");
+        String token = registerAndGetToken("Student One", "student.one@example.com", "en-KZ");
+
+        mockMvc.perform(get("/api/progress/courses/{courseSlug}", COURSE_SLUG)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.courseSlug").value(COURSE_SLUG))
+                .andExpect(jsonPath("$.status").value("NOT_STARTED"))
+                .andExpect(jsonPath("$.currentStep").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.completedSteps").value(0))
+                .andExpect(jsonPath("$.totalSteps").value(2))
+                .andExpect(jsonPath("$.percentComplete").value(0))
+                .andExpect(jsonPath("$.attemptCount").value(0))
+                .andExpect(jsonPath("$.steps.length()").value(2))
+                .andExpect(jsonPath("$.steps[0].lessonSlug").value(LESSON_SLUG))
+                .andExpect(jsonPath("$.steps[0].status").value("NOT_STARTED"))
+                .andExpect(jsonPath("$.steps[1].lessonSlug").value(SECOND_LESSON_SLUG));
+    }
+
+    @Test
+    void studentCanStartProgressCompleteStepsAndResetForNewAttempt() throws Exception {
+        createEnrollment("Student One", "student.one@example.com", "en-KZ");
+        String token = registerAndGetToken("Student One", "student.one@example.com", "en-KZ");
+
+        mockMvc.perform(post("/api/progress/courses/{courseSlug}/start", COURSE_SLUG)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("IN_PROGRESS"))
+                .andExpect(jsonPath("$.currentStep").value(LESSON_SLUG))
+                .andExpect(jsonPath("$.attemptCount").value(1))
+                .andExpect(jsonPath("$.percentComplete").value(0));
+
+        mockMvc.perform(put("/api/progress/courses/{courseSlug}/current-step", COURSE_SLUG)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("lessonSlug", SECOND_LESSON_SLUG))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.currentStep").value(SECOND_LESSON_SLUG))
+                .andExpect(jsonPath("$.status").value("IN_PROGRESS"));
+
+        mockMvc.perform(post("/api/progress/courses/{courseSlug}/steps/{lessonSlug}/complete", COURSE_SLUG, LESSON_SLUG)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("IN_PROGRESS"))
+                .andExpect(jsonPath("$.completedSteps").value(1))
+                .andExpect(jsonPath("$.totalSteps").value(2))
+                .andExpect(jsonPath("$.percentComplete").value(50))
+                .andExpect(jsonPath("$.currentStep").value(SECOND_LESSON_SLUG))
+                .andExpect(jsonPath("$.steps[0].status").value("COMPLETED"))
+                .andExpect(jsonPath("$.steps[1].status").value("NOT_STARTED"));
+
+        mockMvc.perform(post("/api/progress/courses/{courseSlug}/steps/{lessonSlug}/complete", COURSE_SLUG, SECOND_LESSON_SLUG)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("COMPLETED"))
+                .andExpect(jsonPath("$.currentStep").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.completedSteps").value(2))
+                .andExpect(jsonPath("$.percentComplete").value(100));
+
+        mockMvc.perform(post("/api/progress/courses/{courseSlug}/reset", COURSE_SLUG)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("RESET"))
+                .andExpect(jsonPath("$.currentStep").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.completedSteps").value(0))
+                .andExpect(jsonPath("$.percentComplete").value(0))
+                .andExpect(jsonPath("$.attemptCount").value(1))
+                .andExpect(jsonPath("$.steps[0].status").value("NOT_STARTED"))
+                .andExpect(jsonPath("$.steps[1].status").value("NOT_STARTED"));
+
+        mockMvc.perform(post("/api/progress/courses/{courseSlug}/start", COURSE_SLUG)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("IN_PROGRESS"))
+                .andExpect(jsonPath("$.attemptCount").value(2))
+                .andExpect(jsonPath("$.currentStep").value(LESSON_SLUG));
+    }
+
+    @Test
+    void progressEndpointsRequireEnrollment() throws Exception {
+        String token = registerAndGetToken("Student One", "student.one@example.com", "en-KZ");
+
+        mockMvc.perform(get("/api/progress/courses/{courseSlug}", COURSE_SLUG)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("User is not enrolled in course: " + COURSE_SLUG));
+    }
+
+    @Test
+    void manualCompletionSupportsCoursesWithoutLessons() throws Exception {
+        createCourse("empty-course-kz", "Empty Course Kazakhstan");
+        mockMvc.perform(post("/api/enrollments")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of(
+                                "courseSlug", "empty-course-kz",
+                                "fullName", "Student One",
+                                "email", "student.one@example.com",
+                                "locale", "en-KZ"
+                        ))))
+                .andExpect(status().isCreated());
+
+        String token = registerAndGetToken("Student One", "student.one@example.com", "en-KZ");
+
+        mockMvc.perform(post("/api/progress/courses/{courseSlug}/complete", "empty-course-kz")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("COMPLETED"))
+                .andExpect(jsonPath("$.totalSteps").value(0))
+                .andExpect(jsonPath("$.completedSteps").value(0))
+                .andExpect(jsonPath("$.percentComplete").value(100))
+                .andExpect(jsonPath("$.attemptCount").value(1))
+                .andExpect(jsonPath("$.steps.length()").value(0));
     }
 
     @Test
