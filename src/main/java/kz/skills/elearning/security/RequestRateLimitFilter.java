@@ -7,8 +7,10 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import kz.skills.elearning.config.RateLimitProperties;
 import kz.skills.elearning.dto.ApiErrorResponse;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
+import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -34,9 +36,9 @@ public class RequestRateLimitFilter extends OncePerRequestFilter {
     }
 
     @Override
-    protected void doFilterInternal(HttpServletRequest request,
-                                    HttpServletResponse response,
-                                    FilterChain filterChain) throws ServletException, IOException {
+    protected void doFilterInternal(@NonNull HttpServletRequest request,
+                                    @NonNull HttpServletResponse response,
+                                    @NonNull FilterChain filterChain) throws ServletException, IOException {
         if (!properties.isEnabled()) {
             filterChain.doFilter(request, response);
             return;
@@ -106,11 +108,11 @@ public class RequestRateLimitFilter extends OncePerRequestFilter {
     }
 
     private void writeTooManyRequests(HttpServletResponse response) throws IOException {
-        response.setStatus(HttpServletResponse.SC_TOO_MANY_REQUESTS);
+        response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         ApiErrorResponse payload = new ApiErrorResponse(
                 LocalDateTime.now(ZoneOffset.UTC),
-                HttpServletResponse.SC_TOO_MANY_REQUESTS,
+                HttpStatus.TOO_MANY_REQUESTS.value(),
                 "Too Many Requests",
                 "Rate limit exceeded. Please try again later.",
                 Map.of()
