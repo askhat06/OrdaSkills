@@ -1,13 +1,13 @@
 # Frontend Integration Contract: Backend Source of Truth
 
-Audit date: `2026-03-22`
+Audit date: `2026-04-01`
 
 Repository role: Spring Boot backend only
 
 Verification status:
 - Confirmed from backend code, DTOs, controllers, security config, YAML profiles, Flyway migrations, and checked-in tests.
 - Checked-in tests were inspected as source material.
-- Tests were not re-run in this workspace because `java` is unavailable and `JAVA_HOME` is not configured here.
+- Targeted progress integration coverage was re-run in this workspace.
 
 Contract precedence for this project:
 1. Controller mappings
@@ -61,13 +61,17 @@ eLearning domain behavior must follow this backend contract. Legacy non-eLearnin
 | `src/main/java/kz/skills/elearning/controller/AuthController.java` | Auth routes | Exact auth paths and statuses |
 | `src/main/java/kz/skills/elearning/controller/CourseController.java` | Public course and lesson routes | Public catalog, landing, and lesson viewer surface |
 | `src/main/java/kz/skills/elearning/controller/EnrollmentController.java` | Enrollment create/list routes | Public enrollment plus authenticated enrollment lookup |
+| `src/main/java/kz/skills/elearning/controller/ProgressController.java` | Authenticated progress routes | Exact progress paths, auth requirement, and statuses |
 | `src/main/java/kz/skills/elearning/controller/AdminCourseController.java` | Admin course CRUD | Admin route contract and `courseId` usage |
 | `src/main/java/kz/skills/elearning/controller/AdminLessonVideoController.java` | Admin video routes | Upload-init, upload-complete, delete-video contract |
 | `src/main/java/kz/skills/elearning/dto/*.java` | HTTP payload shapes | Exact request and response fields |
 | `src/main/java/kz/skills/elearning/service/AuthService.java` | Register/login/current-user logic | Email normalization, lead upgrade, generic login errors |
-| `src/main/java/kz/skills/elearning/service/EnrollmentService.java` | Enrollment rules | Anonymous enrollment, lead-shell behavior, admin vs learner enrollment listing |
+| `src/main/java/kz/skills/elearning/service/EnrollmentService.java` | Enrollment rules | Anonymous enrollment, lead-shell behavior, admin vs learner enrollment listing, progress bootstrap |
+| `src/main/java/kz/skills/elearning/service/ProgressService.java` | Course progress lifecycle | Start/reset/complete semantics, percent calculation, lesson-step sync |
 | `src/main/java/kz/skills/elearning/service/AdminCourseService.java` | Admin CRUD rules | Slug normalization, delete conflict behavior |
 | `src/main/java/kz/skills/elearning/service/AdminLessonVideoService.java` | Video workflow rules | Single pending upload, size/content-type verification, completion semantics |
+| `src/main/java/kz/skills/elearning/entity/CourseProgress.java` | Aggregate progress state | Source of truth for attempts, counters, timestamps, and current step |
+| `src/main/java/kz/skills/elearning/entity/CourseProgressStep.java` | Step-level progress state | Explicit per-lesson completion model |
 | `src/main/java/kz/skills/elearning/config/SecurityConfig.java` | Route authorization and JSON `401`/`403` behavior | Public vs authenticated vs admin-only truth |
 | `src/main/java/kz/skills/elearning/security/JwtAuthenticationFilter.java` | JWT parsing and DB-backed principal loading | Malformed/deleted-user token behavior |
 | `src/main/java/kz/skills/elearning/security/RequestRateLimitFilter.java` | Public POST rate limiting | `429` contract |
@@ -77,6 +81,7 @@ eLearning domain behavior must follow this backend contract. Legacy non-eLearnin
 | `src/main/resources/application-prod.yml` | Production overlay | Disables H2 console |
 | `src/main/resources/db/migration/V1__init_schema.sql` | Canonical base schema | Tables and uniqueness constraints |
 | `src/main/resources/db/migration/V2__add_lesson_video_uploads.sql` | Video schema extension | Lesson video metadata and pending upload table |
+| `src/main/resources/db/migration/V3__add_course_progress_tracking.sql` | Progress schema extension | `course_progress` and `course_progress_steps` contract |
 | `src/test/java/kz/skills/elearning/ApiIntegrationTests.java` | Integration contract tests | Verifies route behavior and edge cases |
 | `src/test/java/kz/skills/elearning/RateLimitingIntegrationTests.java` | Rate-limit tests | Verifies `429` behavior |
 | `src/test/java/kz/skills/elearning/ProfileConfigurationTests.java` | Fail-closed config test | Verifies non-local JWT secret requirement |
@@ -87,7 +92,7 @@ eLearning domain behavior must follow this backend contract. Legacy non-eLearnin
 | --- | --- | --- |
 | `docs/PROJECT_BLUEPRINT.md` | Helpful secondary context | Contains useful guidance, but code still wins |
 | `docs/REQUIREMENTS_MATRIX.md` | Helpful secondary context | Requirement tracking, not endpoint contract authority |
-| `docs/mvp-schema.sql` | Stale for schema contract | Does not include lesson video upload schema added in `V2__add_lesson_video_uploads.sql` |
+| `docs/mvp-schema.sql` | Stale for schema contract | Does not include lesson video upload and progress schema added in `V2__add_lesson_video_uploads.sql` and `V3__add_course_progress_tracking.sql` |
 
 ## 3. Implemented Backend Capabilities
 
@@ -101,10 +106,13 @@ eLearning domain behavior must follow this backend contract. Legacy non-eLearnin
 - Public lesson viewer via `GET /api/courses/{courseSlug}/lessons/{lessonSlug}`
 - Public enrollment creation via `POST /api/enrollments`
 - Authenticated enrollment listing via `GET /api/enrollments`
+- Authenticated course progress retrieval, start, update, completion, and reset via `/api/progress/courses/**`
 - Admin course list/get/create/update/delete via `/api/admin/courses`
 - Admin lesson video upload-init, upload-complete, and delete via `/api/admin/courses/{courseSlug}/lessons/{lessonSlug}`
 - Health check via `GET /api/health`
 - Rate limiting for `POST /api/auth/login`, `POST /api/auth/register`, and `POST /api/enrollments`
+- Automatic progress bootstrap for new enrollments
+- Explicit per-lesson progress tracking with attempt history
 - Role-based access control with `ROLE_ADMIN`
 - Local default profile with H2 and in-memory media configuration
 - PostgreSQL/S3 profile path with required env vars
@@ -118,6 +126,10 @@ eLearning domain behavior must follow this backend contract. Legacy non-eLearnin
 - Enrollment creation returns explicit `409` on duplicate enrollment instead of silently succeeding.
 - Enrollment on an existing passwordless lead-shell account does not overwrite nonblank `fullName` or `locale`.
 - Registration upgrades an existing passwordless lead-shell user instead of forcing a separate migration path.
+- Course progress is stored as backend state. `percentComplete` is recalculated on the server from explicit persisted step rows.
+- Enrollment initializes course progress in `NOT_STARTED`, and enrolled users can later resume with authenticated progress endpoints.
+- Progress steps are synchronized against the current lesson set for a course, so added lessons appear as new `NOT_STARTED` steps and removed lessons are pruned.
+- Duplicate step-complete/start calls do not double-count completed steps or attempts.
 - Admin course deletion returns explicit `409` if enrollments exist, instead of deleting related learner data implicitly.
 - Admin video upload keeps only one pending upload per lesson. Starting a new upload invalidates the previous pending upload row.
 
@@ -128,7 +140,6 @@ These are important because frontend code must not assume they exist.
 - No refresh-token endpoint
 - No logout endpoint
 - No cookie/session auth flow
-- No progress tracking API
 - No assessments API
 - No localized content API beyond plain `locale` strings on records
 - No lesson CRUD API
@@ -228,6 +239,36 @@ List endpoint returns a raw array of these objects.
 | `courseTitle` | string | Course title |
 | `status` | string | Currently `ENROLLED` on create |
 | `enrolledAt` | string | Serialized `LocalDateTime`, no timezone offset in payload |
+
+#### `CourseProgressStepResponse`
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `lessonSlug` | string | Lesson slug for this progress step |
+| `lessonTitle` | string | Canonical lesson title |
+| `position` | number | Step order aligned to lesson `position` |
+| `status` | string | `NOT_STARTED` or `COMPLETED` |
+| `completedAt` | string or `null` | Serialized `LocalDateTime`, no timezone offset in payload |
+
+#### `CourseProgressResponse`
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `userId` | number | Platform user ID |
+| `courseId` | number | Numeric course ID |
+| `courseSlug` | string | Canonical course slug |
+| `courseTitle` | string | Course title |
+| `status` | string | `NOT_STARTED`, `IN_PROGRESS`, `COMPLETED`, or `RESET` |
+| `currentStep` | string or `null` | Current lesson slug or `null` when inactive/completed |
+| `completedSteps` | number | Count of completed persisted steps |
+| `totalSteps` | number | Count of current lesson-backed steps |
+| `percentComplete` | number | Backend-computed percentage in the `0..100` range |
+| `attemptCount` | number | Increments when a new attempt starts from `NOT_STARTED` or `RESET` |
+| `startedAt` | string or `null` | Serialized `LocalDateTime`, no timezone offset in payload |
+| `updatedAt` | string | Serialized `LocalDateTime`, no timezone offset in payload |
+| `completedAt` | string or `null` | Serialized `LocalDateTime`, no timezone offset in payload |
+| `resetAt` | string or `null` | Serialized `LocalDateTime`, no timezone offset in payload |
+| `steps` | array | Raw array of `CourseProgressStepResponse`, sorted by lesson order |
 
 #### `AdminCourseResponse`
 
@@ -442,10 +483,12 @@ List endpoint returns a raw array of these objects.
   - If no user exists for the email, the backend creates a passwordless learner record.
   - If a learner exists for the email and has no password, the backend reuses that learner.
   - If that existing learner already has nonblank `fullName` or `locale`, those fields are not overwritten.
+  - Successful enrollment bootstraps course progress in `NOT_STARTED` with explicit lesson-backed step rows.
 - Frontend handling notes:
   - Do not force registration before allowing enrollment.
   - Use `409` to show "already enrolled" messaging rather than a generic failure.
   - Use the response as confirmation of the enrollment record that was actually created.
+  - Enrollment can succeed before the learner registers, but progress routes still require authenticated access later.
 - Conflict risks:
   - `courseSlug` is looked up exactly. Frontend code that injects whitespace or noncanonical casing can cause `404`.
   - Enrollment allows email length up to `180`, but registration allows only `120`. If the frontend allows `121..180` here, later register-upgrade can fail validation.
@@ -477,11 +520,72 @@ List endpoint returns a raw array of these objects.
 - Frontend handling notes:
   - Empty arrays are valid successful responses.
   - There is no pagination or metadata wrapper.
+  - This endpoint does not embed course-progress snapshots. Progress is fetched separately under `/api/progress/courses/**`.
 - Conflict risks:
   - Frontend code that lets learners query arbitrary emails will produce backend `403`.
   - Frontend code that expects admin-only access here is too strict; regular learners can call it for themselves.
 
-### 4.10 `GET /api/admin/courses`
+### 4.10 Progress endpoints under `/api/progress/courses/{courseSlug}`
+
+- Auth requirement: Authenticated and enrolled in the target course
+- Purpose: Read and mutate backend-owned course progress
+- Common success response:
+  - `200 OK`
+  - Body is `CourseProgressResponse`
+- Common statuses:
+  - `200`
+  - `400` with message `User is not enrolled in course: {courseSlug}` when the authenticated learner is not enrolled
+  - `401` when unauthenticated
+  - `404` when the course slug or lesson slug does not exist for route variants that reference them
+- Shared backend invariants:
+  - Progress is initialized on enrollment and can be recreated lazily for already-enrolled users if the row is missing.
+  - `percentComplete` is always recalculated on the backend from persisted step rows.
+  - Step rows are synchronized to the current lesson set for the course.
+  - `currentStep` can be `null` for `NOT_STARTED`, `RESET`, and `COMPLETED` states.
+
+Supported routes:
+
+- `GET /api/progress/courses/{courseSlug}`
+  - Returns the current progress snapshot for the enrolled learner.
+  - If progress has never been started, the snapshot can still exist in `NOT_STARTED`.
+
+- `POST /api/progress/courses/{courseSlug}/start`
+  - Starts or resumes a learner attempt.
+  - Transitions `NOT_STARTED` or `RESET` to `IN_PROGRESS`.
+  - Increments `attemptCount` only when a new attempt actually begins.
+  - Sets `currentStep` to the next incomplete lesson when one exists.
+
+- `PUT /api/progress/courses/{courseSlug}/current-step`
+  - Request body: `{ "lessonSlug": "..." }`
+  - Updates the current active lesson without marking it complete.
+  - Returns the full canonical `CourseProgressResponse`.
+
+- `POST /api/progress/courses/{courseSlug}/steps/{lessonSlug}/complete`
+  - Idempotently marks a lesson step as completed.
+  - Recalculates `completedSteps`, `totalSteps`, and `percentComplete`.
+  - Advances `currentStep` to the next incomplete lesson or clears it on completion.
+
+- `POST /api/progress/courses/{courseSlug}/complete`
+  - Marks every current step as completed in one backend operation.
+  - If `totalSteps == 0`, the response still becomes `COMPLETED` with `percentComplete = 100`.
+
+- `POST /api/progress/courses/{courseSlug}/reset`
+  - Clears step completion timestamps and sets every step back to `NOT_STARTED`.
+  - Sets aggregate status to `RESET`.
+  - Does not increment `attemptCount`; the next `/start` call begins the next attempt.
+
+- Frontend handling notes:
+  - Do not compute learner progress on the client when backend progress is available.
+  - Do not assume opening the public lesson viewer automatically mutates progress; progress changes only through progress routes.
+  - Render backend `steps` as the source of truth for completion state and ordering.
+  - Treat `400` not-enrolled responses as a domain state, not as an auth failure.
+
+- Conflict risks:
+  - Frontend code that derives percent from local assumptions can drift from backend truth.
+  - Frontend code that increments attempts on every resume click will diverge from backend behavior.
+  - Frontend code that assumes completed courses can never reopen will miss the case where new lessons are later added and step sync reintroduces incomplete work.
+
+### 4.11 `GET /api/admin/courses`
 
 - Auth requirement: Admin only
 - Purpose: List courses for admin CRUD
@@ -498,7 +602,7 @@ List endpoint returns a raw array of these objects.
 - Conflict risks:
   - Do not assume this endpoint accepts or returns public course-slug URLs for CRUD operations. Course updates and deletes still require numeric `courseId`.
 
-### 4.11 `GET /api/admin/courses/{courseId}`
+### 4.12 `GET /api/admin/courses/{courseId}`
 
 - Auth requirement: Admin only
 - Purpose: Load a single course for admin editing
@@ -517,7 +621,7 @@ List endpoint returns a raw array of these objects.
 - Conflict risks:
   - Frontend code that uses a slug in this route will fail.
 
-### 4.12 `POST /api/admin/courses`
+### 4.13 `POST /api/admin/courses`
 
 - Auth requirement: Admin only
 - Purpose: Create a course
@@ -548,7 +652,7 @@ List endpoint returns a raw array of these objects.
 - Conflict risks:
   - Do not assume the backend preserves empty strings. It converts optional blank strings to `null`.
 
-### 4.13 `PUT /api/admin/courses/{courseId}`
+### 4.14 `PUT /api/admin/courses/{courseId}`
 
 - Auth requirement: Admin only
 - Purpose: Update an existing course
@@ -571,7 +675,7 @@ List endpoint returns a raw array of these objects.
 - Conflict risks:
   - Frontend code that edits by slug instead of by ID will not match the actual route contract.
 
-### 4.14 `DELETE /api/admin/courses/{courseId}`
+### 4.15 `DELETE /api/admin/courses/{courseId}`
 
 - Auth requirement: Admin only
 - Purpose: Delete a course if it is safe to delete
@@ -594,7 +698,7 @@ List endpoint returns a raw array of these objects.
   - Frontend code that treats all `409` responses as the same generic failure will hide meaningful conflict reasons.
   - Inferred risk: a pending `lesson_video_uploads` row can cause a lower-level data-integrity `409`, because explicit delete safety only checks enrollments.
 
-### 4.15 `POST /api/admin/courses/{courseSlug}/lessons/{lessonSlug}/video-upload`
+### 4.16 `POST /api/admin/courses/{courseSlug}/lessons/{lessonSlug}/video-upload`
 
 - Auth requirement: Admin only
 - Purpose: Create a pending upload record and return storage-upload instructions
@@ -630,7 +734,7 @@ List endpoint returns a raw array of these objects.
   - Local default profile returns `uploadUrl` with `inmemory://...`, not a browser-usable HTTP upload URL.
   - Inferred risk: very long filenames are not DTO-validated against DB column lengths and can surface as lower-level persistence errors.
 
-### 4.16 `POST /api/admin/courses/{courseSlug}/lessons/{lessonSlug}/video-upload/complete`
+### 4.17 `POST /api/admin/courses/{courseSlug}/lessons/{lessonSlug}/video-upload/complete`
 
 - Auth requirement: Admin only
 - Purpose: Validate the uploaded object, attach video metadata to the lesson, and clear the pending upload row
@@ -662,7 +766,7 @@ List endpoint returns a raw array of these objects.
 - Conflict risks:
   - Completing an old object key after starting a new upload will fail, because only one pending upload per lesson is kept.
 
-### 4.17 `DELETE /api/admin/courses/{courseSlug}/lessons/{lessonSlug}/video`
+### 4.18 `DELETE /api/admin/courses/{courseSlug}/lessons/{lessonSlug}/video`
 
 - Auth requirement: Admin only
 - Purpose: Remove the lesson's stored video metadata and delete any pending upload row for that lesson
@@ -850,6 +954,42 @@ Practical consequence:
 - `429`: retry-later message, not a silent failure
 - `400`: form-level validation problems
 
+### 7.7 Progress bootstrap on enrollment
+
+Confirmed behavior:
+- Successful enrollment initializes a `course_progress` aggregate for the learner and course.
+- The initialized aggregate starts in `NOT_STARTED`.
+- `completedSteps = 0`, `percentComplete = 0`, and `attemptCount = 0`.
+- One `course_progress_steps` row is created for each current lesson in the course.
+- If the learner later registers from a lead-shell account, that same user record keeps the existing progress state.
+
+Frontend implication:
+- Enrollment does not return progress inline.
+- Progress data becomes available through authenticated progress endpoints after the learner has a valid JWT.
+
+### 7.8 Progress lifecycle
+
+Confirmed behavior:
+- `POST /api/progress/courses/{courseSlug}/start` starts a new attempt only from `NOT_STARTED` or `RESET`.
+- Completing a step recalculates counters and percent on the backend.
+- Completing all steps changes status to `COMPLETED` and clears `currentStep`.
+- Explicit full completion supports zero-step courses and returns `percentComplete = 100`.
+- `POST /api/progress/courses/{courseSlug}/reset` clears completed steps and sets status to `RESET`.
+- Step rows stay synchronized with the course lesson list over time.
+
+Frontend implication:
+- Do not treat public lesson reads as implicit progress writes.
+- Do not keep a separate client-owned notion of progress percent or step order.
+
+### 7.9 What frontend should surface for progress
+
+- `200`: render the returned progress snapshot as canonical state
+- `400`: learner is authenticated but not enrolled in the requested course
+- `401`: learner needs a valid authenticated session before reading or mutating progress
+- `404`: course or lesson slug is invalid for the requested progress route
+- `RESET`: explicit restart state, not an error
+- `COMPLETED`: final state, except when later lesson-sync changes reopen the course with new incomplete steps
+
 ## 8. Admin Contract
 
 ### 8.1 Public vs authenticated vs admin-only route map
@@ -857,7 +997,7 @@ Practical consequence:
 | Visibility | Routes |
 | --- | --- |
 | Public | `GET /api/health`, `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/courses`, `GET /api/courses/{slug}`, `GET /api/courses/{courseSlug}/lessons/{lessonSlug}`, `POST /api/enrollments` |
-| Authenticated | `GET /api/auth/me`, `GET /api/enrollments` |
+| Authenticated | `GET /api/auth/me`, `GET /api/enrollments`, `GET /api/progress/courses/{courseSlug}`, `POST /api/progress/courses/{courseSlug}/start`, `PUT /api/progress/courses/{courseSlug}/current-step`, `POST /api/progress/courses/{courseSlug}/steps/{lessonSlug}/complete`, `POST /api/progress/courses/{courseSlug}/complete`, `POST /api/progress/courses/{courseSlug}/reset` |
 | Admin only | `/api/admin/**` |
 
 ### 8.2 Admin-only routes
@@ -915,6 +1055,7 @@ Frontend implication:
 Canonical schema source:
 - `src/main/resources/db/migration/V1__init_schema.sql`
 - `src/main/resources/db/migration/V2__add_lesson_video_uploads.sql`
+- `src/main/resources/db/migration/V3__add_course_progress_tracking.sql`
 
 `docs/mvp-schema.sql` is not the canonical schema anymore.
 
@@ -927,6 +1068,8 @@ Canonical schema source:
 | `platform_users` | `full_name`, `email`, `locale`, `role`, `password_hash` | `uk_platform_users_email` |
 | `enrollments` | `course_id`, `student_id`, `status`, `enrolled_at` | `uk_enrollments_course_user` |
 | `lesson_video_uploads` | `lesson_id`, `object_key`, `original_filename`, `content_type`, `size_bytes`, `expires_at` | one pending upload per lesson, unique object key |
+| `course_progress` | `course_id`, `student_id`, `current_lesson_id`, `status`, `total_steps`, `completed_steps`, `percent_complete`, `attempt_count`, `started_at`, `completed_at`, `reset_at` | one aggregate progress row per `(course, student)` |
+| `course_progress_steps` | `progress_id`, `lesson_id`, `step_order`, `status`, `completed_at` | one progress-step row per `(progress, lesson)` |
 
 ### 9.3 Slug behavior
 
@@ -955,6 +1098,11 @@ Frontend must tolerate `null` for:
 - `LessonOutlineResponse.summary`
 - `LessonViewerResponse.durationMinutes`
 - `LessonViewerResponse.videoUrl`
+- `CourseProgressResponse.currentStep`
+- `CourseProgressResponse.startedAt`
+- `CourseProgressResponse.completedAt`
+- `CourseProgressResponse.resetAt`
+- `CourseProgressStepResponse.completedAt`
 - `AdminCourseResponse.subtitle`
 - `AdminCourseResponse.instructorName`
 - `AdminCourseResponse.level`
@@ -967,11 +1115,24 @@ Confirmed uniqueness rules:
 - One lesson slug per course
 - One enrollment per `(course, student)`
 - One pending lesson video upload row per lesson
+- One course-progress aggregate per `(course, student)`
+- One course-progress step row per `(progress, lesson)`
 
 Frontend implication:
 - `409` is part of normal domain handling, not an exceptional crash-only condition.
 
-### 9.6 Delete safety and conflict rules
+### 9.6 Progress schema and synchronization rules
+
+Confirmed behavior:
+- Aggregate progress stores counters, timestamps, current step, and attempt history separately from the step rows.
+- Step rows are keyed by lesson identity, not by arbitrary frontend step labels.
+- Progress synchronization is lesson-driven: new lessons are added as `NOT_STARTED` steps, removed lessons are dropped, and counters are recalculated afterward.
+
+Frontend implication:
+- Client code must not invent a separate persistent step inventory.
+- Backend progress can change when the course lesson set changes, even if the learner did not submit a new progress mutation at that moment.
+
+### 9.7 Delete safety and conflict rules
 
 Confirmed behavior:
 - Course delete is blocked if enrollments exist.
@@ -982,7 +1143,7 @@ Inferred risk:
 - A pending upload row can therefore surface as a generic `409 Database constraint violation`.
 - This is inferred from the schema and entity mapping and is not directly covered by a checked-in integration test.
 
-### 9.7 Validation asymmetries that can affect frontend forms
+### 9.8 Validation asymmetries that can affect frontend forms
 
 Confirmed asymmetries:
 - Register email max length is `120`
@@ -1154,6 +1315,17 @@ Recommended sequence:
 5. Call upload-complete with `{ objectKey }`
 6. Refetch lesson data if the UI needs canonical `videoUrl`
 
+### 12.9 Progress integration pattern
+
+Recommended sequence:
+1. After the learner is authenticated, fetch `GET /api/progress/courses/{courseSlug}` for the active course.
+2. Treat the returned `status`, `currentStep`, `percentComplete`, and `steps` as the canonical persisted state.
+3. Call `POST /api/progress/courses/{courseSlug}/start` when the learner intentionally begins or resumes a tracked attempt.
+4. Call `PUT /api/progress/courses/{courseSlug}/current-step` when the UI needs to persist active-lesson focus without completion.
+5. Call `POST /api/progress/courses/{courseSlug}/steps/{lessonSlug}/complete` only for durable completion, not for temporary UI state.
+6. Call `POST /api/progress/courses/{courseSlug}/reset` only from an explicit restart action.
+7. Do not compute or overwrite `percentComplete` on the client.
+
 ## 13. Changed / Invalidated Assumptions
 
 | Invalid assumption | Current backend truth | How old frontend code can break |
@@ -1166,6 +1338,8 @@ Recommended sequence:
 | Login reveals whether an account is passwordless | Login always returns generic invalid-credentials `401` | Frontend branches on nonexistent signal |
 | Lesson viewing is authenticated or enrollment-gated | Lesson viewer route is public | Frontend applies stricter gating than backend |
 | Public course data includes enrollment state | Public course DTOs do not contain enrollment flags | Frontend tries to read fields that do not exist |
+| No backend progress API exists | Authenticated progress routes exist under `/api/progress/courses/**` | Frontend can ignore server-owned progress and drift into client-only state |
+| Percent complete can be derived purely on the client | Backend recalculates progress percent from persisted steps | Client percentages can diverge from server truth |
 | Admin course routes are slug-based | Admin course get/update/delete use numeric `courseId` | Admin UI calls the wrong endpoints |
 | `docs/mvp-schema.sql` is the schema truth | Flyway migrations are canonical | Frontend/admin tooling misses video schema additions |
 | `401` only means "missing token" | `401` also covers malformed, expired, and deleted-user tokens | Frontend keeps invalid sessions alive |
@@ -1184,6 +1358,12 @@ These behaviors should not change casually. If they do change, backend docs and 
 - Generic login `401 Invalid email or password` behavior
 - Enrollment duplicate `409` behavior
 - Enrollment non-mutation rule for existing nonblank lead-shell profiles
+- Progress bootstrap on enrollment
+- Progress endpoint auth requirement and `400` not-enrolled behavior
+- Backend-only calculation of `percentComplete`
+- Attempt-count increment only when a new attempt begins from `NOT_STARTED` or `RESET`
+- Step synchronization against the current course lesson set
+- Zero-step completion semantics
 - Direct list response shapes with no pagination wrapper
 - `204` no-body semantics on admin delete and upload-complete routes
 - Admin course CRUD using numeric `courseId`

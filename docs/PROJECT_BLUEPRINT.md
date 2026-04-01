@@ -5,9 +5,9 @@
 - Repository in this workspace: `OrdaSkills` / `elearning-backend`
 - Repository role: backend source of truth
 - Canonical frontend: external `oyn_front` / `jiyuu` React project, not stored in this repo
-- Audit date: `2026-03-22`
+- Audit date: `2026-04-01`
 - Audit method: local backend repo inspection plus user-provided frontend architecture notes
-- Runtime verification status: no local rerun of Java or Node tooling from this session because `java`, `mvn`, `node`, and `npm` are not installed in this environment
+- Runtime verification status: targeted backend integration coverage for course progress was rerun in this workspace; the external frontend was not rerun here
 - Current default backend profile: `local`
 - Canonical schema source: `src/main/resources/db/migration/*.sql`
 - API contract source of truth: backend controllers, DTOs, security config, YAML profiles, and tests
@@ -35,8 +35,9 @@ The backend currently provides:
 3. lesson viewer payloads including `videoUrl`,
 4. public enrollment creation with lead-shell support,
 5. authenticated enrollment listing,
-6. admin course CRUD,
-7. admin lesson video upload, completion, and delete workflows.
+6. authenticated course progress tracking with explicit lesson steps,
+7. admin course CRUD,
+8. admin lesson video upload, completion, and delete workflows.
 
 The frontend is an external concern:
 
@@ -86,6 +87,12 @@ Important consequence:
 | `/api/courses/{courseSlug}/lessons/{lessonSlug}` | GET | Public | Lesson viewer payload | Use `videoUrl` directly for playback |
 | `/api/enrollments` | POST | Public | Create enrollment | Supports anonymous lead-shell flow |
 | `/api/enrollments` | GET | Authenticated | List enrollments | Students only see their own records |
+| `/api/progress/courses/{courseSlug}` | GET | Authenticated + enrolled | Read course progress | Returns backend-owned progress snapshot |
+| `/api/progress/courses/{courseSlug}/start` | POST | Authenticated + enrolled | Start/resume tracked attempt | Increments attempt count only for new attempts |
+| `/api/progress/courses/{courseSlug}/current-step` | PUT | Authenticated + enrolled | Persist active lesson focus | Expects `{ "lessonSlug": "..." }` |
+| `/api/progress/courses/{courseSlug}/steps/{lessonSlug}/complete` | POST | Authenticated + enrolled | Complete one progress step | Recalculates counters and percent |
+| `/api/progress/courses/{courseSlug}/complete` | POST | Authenticated + enrolled | Complete whole course | Supports zero-step completion |
+| `/api/progress/courses/{courseSlug}/reset` | POST | Authenticated + enrolled | Reset progress | Prepares next attempt without incrementing count yet |
 | `/api/admin/courses` | GET | Admin | List courses | Admin-only CRUD surface |
 | `/api/admin/courses/{courseId}` | GET | Admin | Load one course | For edit forms |
 | `/api/admin/courses` | POST | Admin | Create course | Expect validation and uniqueness errors |
@@ -120,10 +127,13 @@ Important consequence:
 | `src/main/java/kz/skills/elearning/security/JwtAuthenticationFilter.java` | JWT parsing and deleted-user handling | Invalid tokens now degrade to `401` |
 | `src/main/java/kz/skills/elearning/service/AuthService.java` | Register/login/current-user lifecycle | Defines lead upgrade and generic login errors |
 | `src/main/java/kz/skills/elearning/service/EnrollmentService.java` | Enrollment rules | Defines anonymous enrollment and non-mutation behavior |
+| `src/main/java/kz/skills/elearning/controller/ProgressController.java` | Progress API surface | Exact course-progress route contract |
+| `src/main/java/kz/skills/elearning/service/ProgressService.java` | Progress lifecycle orchestration | Backend source of truth for counters, attempts, and step sync |
 | `src/main/java/kz/skills/elearning/controller/AdminCourseController.java` | Admin course CRUD surface | Required backend for the CRUD module |
 | `src/main/java/kz/skills/elearning/service/AdminCourseService.java` | Slug uniqueness and delete safety | Governs `409` delete behavior |
 | `src/main/java/kz/skills/elearning/controller/AdminLessonVideoController.java` | Admin media endpoints | Entry point for upload-init, upload-complete, and delete |
 | `src/main/java/kz/skills/elearning/service/AdminLessonVideoService.java` | Video upload orchestration | Governs admin lesson media behavior |
+| `src/main/resources/db/migration/V3__add_course_progress_tracking.sql` | Progress persistence contract | Defines aggregate and per-step schema |
 | `src/main/resources/application.yml` | Shared config | Source of truth for profile default and rate limits |
 | `src/main/resources/application-local.yml` | Local demo config | H2 + in-memory media + local JWT secret |
 | `src/main/resources/application-postgres.yml` | Non-local env-driven config | Fail-closed runtime config for PostgreSQL, S3, and JWT |
@@ -154,6 +164,7 @@ These paths are not in this repo and should be revalidated inside `oyn_front` be
 - fail-closed non-local configuration using explicit env vars
 - local demo default profile with H2 and in-memory media
 - request rate limiting for login, registration, and enrollment
+- course progress tracking with explicit step rows, reset support, repeat attempts, and zero-step completion
 - JSON `401` and `403` responses from security entry points
 - safer JWT handling for malformed or deleted-user tokens
 - generic login errors that do not reveal passwordless account state
@@ -279,12 +290,17 @@ Use these rules to avoid major errors and conflicts:
 13. Do not parse bodies on `204` responses.
 14. Preserve legacy routes while migrating eLearning flows; avoid all-at-once rewrites unless explicitly requested.
 15. If a contract seems unclear, check backend tests before changing frontend assumptions.
+16. Treat course progress, step completion, and percent calculation as backend-owned state, not as frontend-derived truth.
 
 ## Current State Verified From Source
 
 The following items are directly supported by code in this workspace:
 
 - the backend supports all required MVP backend routes plus admin course CRUD and admin media endpoints
+- the backend exposes authenticated course progress routes under `/api/progress/courses/**`
+- enrollment bootstraps course progress and per-lesson progress-step rows
+- progress percent is calculated on the backend from persisted step state
+- progress steps stay synchronized with the current lesson set for a course
 - the backend defaults to a self-contained `local` profile
 - non-local runtime expects explicit env vars for PostgreSQL, JWT, and S3-compatible media
 - request rate limiting is present for public auth and enrollment endpoints
@@ -293,6 +309,7 @@ The following items are directly supported by code in this workspace:
 - the backend test suite includes coverage for:
   - deleted-user JWT fallback to `401`
   - anonymous enrollment non-mutation
+  - course progress bootstrap, reset, repeat attempts, and zero-step completion
   - admin course CRUD
   - `409` delete conflict
   - `429` rate limiting
