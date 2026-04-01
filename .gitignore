@@ -6,3 +6,7 @@ out/
 *.log
 .env
 .wrapper-download/
+
+# local env files
+.env.*
+!.env.example
