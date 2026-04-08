@@ -23,6 +23,9 @@ public class RateLimitProperties {
     @Min(1)
     private int enrollmentMaxRequests = 10;
 
+    @Min(1)
+    private int resendVerificationMaxRequests = 3;
+
     public boolean isEnabled() {
         return enabled;
     }
@@ -61,5 +64,13 @@ public class RateLimitProperties {
 
     public void setEnrollmentMaxRequests(int enrollmentMaxRequests) {
         this.enrollmentMaxRequests = enrollmentMaxRequests;
+    }
+
+    public int getResendVerificationMaxRequests() {
+        return resendVerificationMaxRequests;
+    }
+
+    public void setResendVerificationMaxRequests(int resendVerificationMaxRequests) {
+        this.resendVerificationMaxRequests = resendVerificationMaxRequests;
     }
 }

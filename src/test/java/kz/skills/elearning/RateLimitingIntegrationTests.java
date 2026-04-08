@@ -26,11 +26,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "app.media.video.provider=in-memory",
         "app.media.video.bucket=test-bucket",
         "app.media.video.public-base-url=https://cdn.example.test/videos",
+        "app.mail.provider=in-memory",
         "app.security.rate-limit.enabled=true",
         "app.security.rate-limit.window=1m",
         "app.security.rate-limit.login-max-requests=2",
         "app.security.rate-limit.register-max-requests=2",
-        "app.security.rate-limit.enrollment-max-requests=2"
+        "app.security.rate-limit.enrollment-max-requests=2",
+        "app.security.rate-limit.resend-verification-max-requests=2"
 })
 @AutoConfigureMockMvc
 @Transactional
@@ -120,6 +122,22 @@ class RateLimitingIntegrationTests {
                                 "email", "lead3@example.com",
                                 "locale", "en-KZ"
                         ))))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.message").value("Rate limit exceeded. Please try again later."));
+    }
+
+    @Test
+    void resendVerificationEndpointReturnsTooManyRequestsAfterLimit() throws Exception {
+        for (int attempt = 0; attempt < 2; attempt++) {
+            mockMvc.perform(post("/api/auth/resend-verification")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(json(Map.of("email", "student@example.com"))))
+                    .andExpect(status().isAccepted());
+        }
+
+        mockMvc.perform(post("/api/auth/resend-verification")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("email", "student@example.com"))))
                 .andExpect(status().isTooManyRequests())
                 .andExpect(jsonPath("$.message").value("Rate limit exceeded. Please try again later."));
     }

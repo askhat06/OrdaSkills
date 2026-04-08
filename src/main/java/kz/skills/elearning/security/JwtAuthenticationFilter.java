@@ -20,6 +20,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
+    public static final String EMAIL_VERIFICATION_REQUIRED_ATTR = "emailVerificationRequired";
+
     private final JwtService jwtService;
     private final UserDetailsService userDetailsService;
 
@@ -55,6 +57,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 UserDetails userDetails = userDetailsService.loadUserByUsername(email);
 
                 if (jwtService.isTokenValid(token, userDetails)) {
+                    if (userDetails instanceof PlatformUserPrincipal principal && !principal.isEmailVerified()) {
+                        request.setAttribute(EMAIL_VERIFICATION_REQUIRED_ATTR, true);
+                        SecurityContextHolder.clearContext();
+                        filterChain.doFilter(request, response);
+                        return;
+                    }
+
                     UsernamePasswordAuthenticationToken authentication =
                             new UsernamePasswordAuthenticationToken(
                                     userDetails,

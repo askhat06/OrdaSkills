@@ -60,7 +60,8 @@ public class SecurityConfig {
                         auth.requestMatchers("/h2-console/**").permitAll();
                     }
                     auth.requestMatchers("/api/admin/**").hasRole("ADMIN");
-                    auth.requestMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/login").permitAll()
+                    auth.requestMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/login", "/api/auth/resend-verification").permitAll()
+                            .requestMatchers(HttpMethod.GET, "/api/auth/verify-email").permitAll()
                             .requestMatchers(HttpMethod.GET, "/api/health", "/api/courses/**").permitAll()
                             .requestMatchers(HttpMethod.POST, "/api/enrollments").permitAll()
                             .requestMatchers(HttpMethod.GET, "/api/auth/me").authenticated()
@@ -68,7 +69,14 @@ public class SecurityConfig {
                 })
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint((request, response, authException) ->
-                                writeErrorResponse(response, HttpServletResponse.SC_UNAUTHORIZED, "Unauthorized", "Authentication required"))
+                                {
+                                    Object emailVerificationRequired = request.getAttribute(JwtAuthenticationFilter.EMAIL_VERIFICATION_REQUIRED_ATTR);
+                                    if (Boolean.TRUE.equals(emailVerificationRequired)) {
+                                        writeErrorResponse(response, HttpServletResponse.SC_FORBIDDEN, "Forbidden", "Email verification required");
+                                        return;
+                                    }
+                                    writeErrorResponse(response, HttpServletResponse.SC_UNAUTHORIZED, "Unauthorized", "Authentication required");
+                                })
                         .accessDeniedHandler((request, response, accessDeniedException) ->
                                 writeErrorResponse(response, HttpServletResponse.SC_FORBIDDEN, "Forbidden", "Access denied")))
                 .headers(headers -> headers.frameOptions(frame -> frame.sameOrigin()))

@@ -94,17 +94,32 @@ public class RequestRateLimitFilter extends OncePerRequestFilter {
             return null;
         }
 
-        String servletPath = request.getServletPath();
-        if ("/api/auth/login".equals(servletPath)) {
+        String requestPath = resolveRequestPath(request);
+        if ("/api/auth/login".equals(requestPath)) {
             return new RateLimitRoute("login", properties.getLoginMaxRequests());
         }
-        if ("/api/auth/register".equals(servletPath)) {
+        if ("/api/auth/register".equals(requestPath)) {
             return new RateLimitRoute("register", properties.getRegisterMaxRequests());
         }
-        if ("/api/enrollments".equals(servletPath)) {
+        if ("/api/enrollments".equals(requestPath)) {
             return new RateLimitRoute("enrollment", properties.getEnrollmentMaxRequests());
         }
+        if ("/api/auth/resend-verification".equals(requestPath)) {
+            return new RateLimitRoute("resend-verification", properties.getResendVerificationMaxRequests());
+        }
         return null;
+    }
+
+    private String resolveRequestPath(HttpServletRequest request) {
+        String requestUri = request.getRequestURI();
+        String contextPath = request.getContextPath();
+        if (requestUri != null && !requestUri.isBlank()) {
+            if (contextPath != null && !contextPath.isBlank() && requestUri.startsWith(contextPath)) {
+                return requestUri.substring(contextPath.length());
+            }
+            return requestUri;
+        }
+        return request.getServletPath();
     }
 
     private void writeTooManyRequests(HttpServletResponse response) throws IOException {
