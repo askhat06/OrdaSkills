@@ -1,0 +1,48 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${APP_HOST_PORT:-7777}:7777"
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
+      PORT: 7777
+      JAVA_OPTS: ${JAVA_OPTS:-}
+      POSTGRES_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-elearning}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      APP_SECURITY_JWT_SECRET: ${APP_SECURITY_JWT_SECRET:?set APP_SECURITY_JWT_SECRET}
+      APP_CORS_ALLOWED_ORIGINS: ${APP_CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:5173}
+      APP_MEDIA_VIDEO_BUCKET: ${APP_MEDIA_VIDEO_BUCKET:?set APP_MEDIA_VIDEO_BUCKET}
+      APP_MEDIA_VIDEO_ENDPOINT: ${APP_MEDIA_VIDEO_ENDPOINT:?set APP_MEDIA_VIDEO_ENDPOINT}
+      APP_MEDIA_VIDEO_PUBLIC_BASE_URL: ${APP_MEDIA_VIDEO_PUBLIC_BASE_URL:?set APP_MEDIA_VIDEO_PUBLIC_BASE_URL}
+      APP_MEDIA_VIDEO_ACCESS_KEY: ${APP_MEDIA_VIDEO_ACCESS_KEY:?set APP_MEDIA_VIDEO_ACCESS_KEY}
+      APP_MEDIA_VIDEO_SECRET_KEY: ${APP_MEDIA_VIDEO_SECRET_KEY:?set APP_MEDIA_VIDEO_SECRET_KEY}
+      APP_MEDIA_VIDEO_REGION: ${APP_MEDIA_VIDEO_REGION:-auto}
+      APP_MEDIA_VIDEO_PATH_STYLE_ACCESS_ENABLED: ${APP_MEDIA_VIDEO_PATH_STYLE_ACCESS_ENABLED:-true}
+      APP_MEDIA_VIDEO_PRESIGN_DURATION: ${APP_MEDIA_VIDEO_PRESIGN_DURATION:-15m}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    ports:
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-elearning}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-elearning}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:

@@ -1,0 +1,13 @@
+target/
+.git/
+.idea/
+.vscode/
+out/
+*.iml
+*.log
+.env
+.env.*
+!.env.example
+docker-compose.env
+.wrapper-download/
+docs/
