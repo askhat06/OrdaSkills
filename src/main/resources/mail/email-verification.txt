@@ -1,0 +1,12 @@
+Confirm your email
+
+Hello {{FULL_NAME}},
+
+Thanks for registering in OrdaSkills. Confirm your email address to activate your account.
+
+Open this link:
+{{VERIFICATION_URL}}
+
+This link expires on {{EXPIRES_AT}}.
+
+If you did not create this account, you can ignore this email.

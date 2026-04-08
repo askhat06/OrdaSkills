@@ -87,4 +87,19 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiErrorResponse> handleInvalidCredentials(InvalidCredentialsException ex) {
         return buildResponse(HttpStatus.UNAUTHORIZED, ex.getMessage(), Map.of());
     }
+
+    @ExceptionHandler(EmailNotVerifiedException.class)
+    public ResponseEntity<ApiErrorResponse> handleEmailNotVerified(EmailNotVerifiedException ex) {
+        return buildResponse(HttpStatus.FORBIDDEN, ex.getMessage(), Map.of());
+    }
+
+    @ExceptionHandler(EmailVerificationTokenInvalidException.class)
+    public ResponseEntity<ApiErrorResponse> handleInvalidVerificationToken(EmailVerificationTokenInvalidException ex) {
+        return buildResponse(HttpStatus.BAD_REQUEST, ex.getMessage(), Map.of());
+    }
+
+    @ExceptionHandler(EmailVerificationTokenExpiredException.class)
+    public ResponseEntity<ApiErrorResponse> handleExpiredVerificationToken(EmailVerificationTokenExpiredException ex) {
+        return buildResponse(HttpStatus.GONE, ex.getMessage(), Map.of());
+    }
 }

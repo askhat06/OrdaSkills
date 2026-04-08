@@ -17,19 +17,22 @@ public class PlatformUserPrincipal implements UserDetails {
     private final String fullName;
     private final String locale;
     private final UserRole role;
+    private final boolean emailVerified;
 
     public PlatformUserPrincipal(Long id,
                                  String email,
                                  String passwordHash,
                                  String fullName,
                                  String locale,
-                                 UserRole role) {
+                                 UserRole role,
+                                 boolean emailVerified) {
         this.id = id;
         this.email = email;
         this.passwordHash = passwordHash;
         this.fullName = fullName;
         this.locale = locale;
         this.role = role == null ? UserRole.STUDENT : role;
+        this.emailVerified = emailVerified;
     }
 
     public static PlatformUserPrincipal from(PlatformUser user) {
@@ -39,7 +42,8 @@ public class PlatformUserPrincipal implements UserDetails {
                 user.getPasswordHash(),
                 user.getFullName(),
                 user.getLocale(),
-                user.getRole()
+                user.getRole(),
+                user.isEmailVerified()
         );
     }
 
@@ -57,6 +61,10 @@ public class PlatformUserPrincipal implements UserDetails {
 
     public UserRole getRole() {
         return role;
+    }
+
+    public boolean isEmailVerified() {
+        return emailVerified;
     }
 
     @Override

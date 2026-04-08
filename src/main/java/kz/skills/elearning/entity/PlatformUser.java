@@ -31,6 +31,12 @@ public class PlatformUser extends BaseEntity {
     @Column(name = "password_hash", length = 255)
     private String passwordHash;
 
+    @Column(name = "email_verified", nullable = false)
+    private boolean emailVerified;
+
+    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    private List<EmailVerificationToken> emailVerificationTokens = new ArrayList<>();
+
     @OneToMany(mappedBy = "student", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     private List<Enrollment> enrollments = new ArrayList<>();
 
@@ -88,5 +94,21 @@ public class PlatformUser extends BaseEntity {
 
     public void setPasswordHash(String passwordHash) {
         this.passwordHash = passwordHash;
+    }
+
+    public boolean isEmailVerified() {
+        return emailVerified;
+    }
+
+    public void setEmailVerified(boolean emailVerified) {
+        this.emailVerified = emailVerified;
+    }
+
+    public List<EmailVerificationToken> getEmailVerificationTokens() {
+        return emailVerificationTokens;
+    }
+
+    public void setEmailVerificationTokens(List<EmailVerificationToken> emailVerificationTokens) {
+        this.emailVerificationTokens = emailVerificationTokens;
     }
 }

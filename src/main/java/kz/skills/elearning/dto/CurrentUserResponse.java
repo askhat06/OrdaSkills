@@ -11,6 +11,7 @@ public class CurrentUserResponse {
     private String email;
     private String locale;
     private UserRole role;
+    private boolean emailVerified;
 
     public static CurrentUserResponse fromEntity(PlatformUser user) {
         CurrentUserResponse response = new CurrentUserResponse();
@@ -19,6 +20,7 @@ public class CurrentUserResponse {
         response.setEmail(user.getEmail());
         response.setLocale(user.getLocale());
         response.setRole(user.getRole() == null ? UserRole.STUDENT : user.getRole());
+        response.setEmailVerified(user.isEmailVerified());
         return response;
     }
 
@@ -29,6 +31,7 @@ public class CurrentUserResponse {
         response.setEmail(principal.getUsername());
         response.setLocale(principal.getLocale());
         response.setRole(principal.getRole());
+        response.setEmailVerified(principal.isEmailVerified());
         return response;
     }
 
@@ -70,5 +73,13 @@ public class CurrentUserResponse {
 
     public void setRole(UserRole role) {
         this.role = role;
+    }
+
+    public boolean isEmailVerified() {
+        return emailVerified;
+    }
+
+    public void setEmailVerified(boolean emailVerified) {
+        this.emailVerified = emailVerified;
     }
 }

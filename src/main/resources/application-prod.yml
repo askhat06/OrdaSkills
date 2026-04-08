@@ -1,4 +1,6 @@
 spring:
+  jpa:
+    show-sql: false
   h2:
     console:
       enabled: false

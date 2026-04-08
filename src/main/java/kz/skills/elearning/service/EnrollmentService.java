@@ -136,6 +136,7 @@ public class EnrollmentService {
         user.setFullName(request.fullName().trim());
         user.setEmail(normalizedEmail);
         user.setLocale(request.locale().trim());
+        user.setEmailVerified(false);
         return user;
     }
 

@@ -2,13 +2,18 @@ package kz.skills.elearning;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import kz.skills.elearning.entity.EmailVerificationToken;
 import kz.skills.elearning.entity.Course;
 import kz.skills.elearning.entity.Lesson;
 import kz.skills.elearning.entity.PlatformUser;
 import kz.skills.elearning.entity.UserRole;
 import kz.skills.elearning.repository.CourseRepository;
+import kz.skills.elearning.repository.EmailVerificationTokenRepository;
 import kz.skills.elearning.repository.LessonRepository;
 import kz.skills.elearning.repository.PlatformUserRepository;
+import kz.skills.elearning.security.JwtService;
+import kz.skills.elearning.security.PlatformUserPrincipal;
+import kz.skills.elearning.service.email.InMemoryMailDeliveryService;
 import kz.skills.elearning.service.video.InMemoryVideoStorageService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -22,7 +27,11 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -41,7 +50,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "app.media.video.provider=in-memory",
         "app.media.video.public-base-url=https://cdn.example.test/videos",
         "app.media.video.max-file-size-bytes=2048",
-        "app.security.rate-limit.enabled=false"
+        "app.security.rate-limit.enabled=false",
+        "app.mail.provider=in-memory"
 })
 @AutoConfigureMockMvc
 @Transactional
@@ -68,13 +78,23 @@ class ApiIntegrationTests {
     private LessonRepository lessonRepository;
 
     @Autowired
+    private EmailVerificationTokenRepository emailVerificationTokenRepository;
+
+    @Autowired
     private PasswordEncoder passwordEncoder;
+
+    @Autowired
+    private JwtService jwtService;
+
+    @Autowired
+    private InMemoryMailDeliveryService inMemoryMailDeliveryService;
 
     @Autowired
     private InMemoryVideoStorageService inMemoryVideoStorageService;
 
     @BeforeEach
     void setUp() {
+        inMemoryMailDeliveryService.clear();
         inMemoryVideoStorageService.clear();
     }
 
@@ -89,18 +109,45 @@ class ApiIntegrationTests {
                                 "locale", "en-KZ"
                         ))))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.tokenType").value("Bearer"))
-                .andExpect(jsonPath("$.expiresInSeconds").value(86400))
+                .andExpect(jsonPath("$.emailVerificationRequired").value(true))
                 .andExpect(jsonPath("$.user.email").value("student.one@example.com"))
                 .andReturn();
 
-        String token = readAccessToken(registerResult);
+        assertThat(registerResult.getResponse().getContentAsString()).doesNotContain("accessToken");
+
+        String verificationToken = extractVerificationTokenFromLastEmail();
+
+        mockMvc.perform(get("/api/auth/verify-email")
+                        .param("token", verificationToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.email").value("student.one@example.com"))
+                .andExpect(jsonPath("$.emailVerified").value(true));
+
+        MvcResult loginResult = mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of(
+                                "email", "student.one@example.com",
+                                "password", DEFAULT_PASSWORD
+                        ))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.tokenType").value("Bearer"))
+                .andExpect(jsonPath("$.expiresInSeconds").value(86400))
+                .andExpect(jsonPath("$.user.fullName").value("Student One"))
+                .andReturn();
+
+        String token = readAccessToken(loginResult);
 
         mockMvc.perform(get("/api/auth/me")
                         .header(HttpHeaders.AUTHORIZATION, bearer(token)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.email").value("student.one@example.com"))
+                .andExpect(jsonPath("$.emailVerified").value(true))
                 .andExpect(jsonPath("$.role").value("STUDENT"));
+    }
+
+    @Test
+    void loginRequiresVerifiedEmail() throws Exception {
+        registerUser("Student One", "student.one@example.com", "en-KZ");
 
         mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -108,9 +155,59 @@ class ApiIntegrationTests {
                                 "email", "student.one@example.com",
                                 "password", DEFAULT_PASSWORD
                         ))))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.expiresInSeconds").value(86400))
-                .andExpect(jsonPath("$.user.fullName").value("Student One"));
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value("Email is not verified. Please confirm your email before signing in."));
+    }
+
+    @Test
+    void verificationEndpointReturnsClearErrorsForInvalidAndExpiredTokens() throws Exception {
+        mockMvc.perform(get("/api/auth/verify-email")
+                        .param("token", "missing-token"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Verification link is invalid. Please request a new email."));
+
+        registerUser("Expired User", "expired@example.com", "en-KZ");
+        String verificationToken = extractVerificationTokenFromLastEmail();
+
+        EmailVerificationToken storedToken = emailVerificationTokenRepository.findAll().stream()
+                .findFirst()
+                .orElseThrow();
+        storedToken.setExpiresAt(LocalDateTime.now(ZoneOffset.UTC).minusMinutes(5));
+        emailVerificationTokenRepository.save(storedToken);
+
+        mockMvc.perform(get("/api/auth/verify-email")
+                        .param("token", verificationToken))
+                .andExpect(status().isGone())
+                .andExpect(jsonPath("$.message").value("Verification link has expired. Please request a new email."));
+    }
+
+    @Test
+    void resendVerificationEmailIssuesAnotherMessage() throws Exception {
+        registerUser("Student One", "student.one@example.com", "en-KZ");
+        assertThat(inMemoryMailDeliveryService.getSentMessages()).hasSize(1);
+
+        mockMvc.perform(post("/api/auth/resend-verification")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("email", "student.one@example.com"))))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.message").value(
+                        "If an unverified account exists for this email, a new verification link has been sent."
+                ));
+
+        assertThat(inMemoryMailDeliveryService.getSentMessages()).hasSize(2);
+    }
+
+    @Test
+    void unverifiedUsersCannotAccessProtectedEndpointsEvenWithJwt() throws Exception {
+        registerUser("Student One", "student.one@example.com", "en-KZ");
+
+        PlatformUser user = platformUserRepository.findByEmailIgnoreCase("student.one@example.com").orElseThrow();
+        String token = jwtService.generateToken(PlatformUserPrincipal.from(user));
+
+        mockMvc.perform(get("/api/auth/me")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value("Email verification required"));
     }
 
     @Test
@@ -160,6 +257,8 @@ class ApiIntegrationTests {
         String token = registerAndGetToken("Student One", "student.one@example.com", "en-KZ");
 
         PlatformUser user = platformUserRepository.findByEmailIgnoreCase("student.one@example.com").orElseThrow();
+        emailVerificationTokenRepository.deleteAll();
+        emailVerificationTokenRepository.flush();
         platformUserRepository.delete(user);
         platformUserRepository.flush();
 
@@ -644,18 +743,14 @@ class ApiIntegrationTests {
     }
 
     private String registerAndGetToken(String fullName, String email, String locale) throws Exception {
-        MvcResult result = mockMvc.perform(post("/api/auth/register")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(Map.of(
-                                "fullName", fullName,
-                                "email", email,
-                                "password", DEFAULT_PASSWORD,
-                                "locale", locale
-                        ))))
-                .andExpect(status().isCreated())
-                .andReturn();
+        registerUser(fullName, email, locale);
+        String verificationToken = extractVerificationTokenFromLastEmail();
 
-        return readAccessToken(result);
+        mockMvc.perform(get("/api/auth/verify-email")
+                        .param("token", verificationToken))
+                .andExpect(status().isOk());
+
+        return loginAndGetToken(email, DEFAULT_PASSWORD);
     }
 
     private String loginAndGetToken(String email, String password) throws Exception {
@@ -677,13 +772,37 @@ class ApiIntegrationTests {
         admin.setFullName(fullName);
         admin.setLocale("en");
         admin.setRole(UserRole.ADMIN);
+        admin.setEmailVerified(true);
         admin.setPasswordHash(passwordEncoder.encode(DEFAULT_PASSWORD));
         platformUserRepository.save(admin);
+    }
+
+    private void registerUser(String fullName, String email, String locale) throws Exception {
+        mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of(
+                                "fullName", fullName,
+                                "email", email,
+                                "password", DEFAULT_PASSWORD,
+                                "locale", locale
+                        ))))
+                .andExpect(status().isCreated());
     }
 
     private String readAccessToken(MvcResult result) throws Exception {
         JsonNode json = objectMapper.readTree(result.getResponse().getContentAsString());
         return json.get("accessToken").asText();
+    }
+
+    private String extractVerificationTokenFromLastEmail() {
+        assertThat(inMemoryMailDeliveryService.getSentMessages()).isNotEmpty();
+        String textBody = inMemoryMailDeliveryService.getSentMessages()
+                .get(inMemoryMailDeliveryService.getSentMessages().size() - 1)
+                .textBody();
+
+        Matcher matcher = Pattern.compile("token=([^\\s]+)").matcher(textBody);
+        assertThat(matcher.find()).isTrue();
+        return matcher.group(1);
     }
 
     private String json(Object value) throws Exception {

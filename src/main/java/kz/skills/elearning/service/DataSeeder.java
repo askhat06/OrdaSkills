@@ -4,9 +4,11 @@ import kz.skills.elearning.entity.Course;
 import kz.skills.elearning.entity.Lesson;
 import kz.skills.elearning.repository.CourseRepository;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 @Component
+@Profile("local")
 public class DataSeeder implements CommandLineRunner {
 
     private final CourseRepository courseRepository;
