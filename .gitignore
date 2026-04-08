@@ -10,3 +10,4 @@ out/
 # local env files
 .env.*
 !.env.example
+docker-compose.env
