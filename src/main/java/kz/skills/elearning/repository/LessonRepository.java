@@ -13,4 +13,13 @@ public interface LessonRepository extends JpaRepository<Lesson, Long> {
     Optional<Lesson> findByCourse_SlugAndSlug(String courseSlug, String lessonSlug);
 
     List<Lesson> findByCourse_SlugOrderByPositionAsc(String courseSlug);
+
+    // --- Slug uniqueness check within a course (used during lesson create/update) ---
+    boolean existsByCourse_IdAndSlug(Long courseId, String slug);
+
+    // --- Used when deleting a lesson to shift subsequent positions down by 1 ---
+    List<Lesson> findByCourse_IdAndPositionGreaterThanOrderByPositionAsc(Long courseId, Integer position);
+
+    // --- Used to compute the next available position when appending a lesson ---
+    List<Lesson> findByCourse_IdOrderByPositionAsc(Long courseId);
 }

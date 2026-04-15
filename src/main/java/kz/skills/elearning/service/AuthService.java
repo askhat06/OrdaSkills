@@ -59,7 +59,11 @@ public class AuthService {
         user.setFullName(normalizedFullName);
         user.setLocale(normalizedLocale);
         user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
-        user.setRole(user.getRole() == null ? UserRole.STUDENT : user.getRole());
+        // Role: honour the request value only when creating a brand-new account.
+        // Lead-shell upgrades preserve the existing role (always STUDENT).
+        if (user.getRole() == null) {
+            user.setRole(resolveRegistrationRole(request.getRole()));
+        }
 
         PlatformUser savedUser = platformUserRepository.save(user);
         PlatformUserPrincipal principal = PlatformUserPrincipal.from(savedUser);
@@ -95,6 +99,20 @@ public class AuthService {
     @Transactional(readOnly = true)
     public CurrentUserResponse me(PlatformUserPrincipal principal) {
         return CurrentUserResponse.fromPrincipal(principal);
+    }
+
+    /**
+     * Maps a registration role string to a {@link UserRole}.
+     * {@code null} or blank → {@code STUDENT} (safe default).
+     * {@code "TEACHER"} → {@code TEACHER}.
+     * Any other value is rejected by the DTO's {@code @Pattern} before reaching here,
+     * but we guard again so that bypassed validation never grants unexpected roles.
+     */
+    private UserRole resolveRegistrationRole(String role) {
+        if (role != null && role.equalsIgnoreCase(UserRole.TEACHER.name())) {
+            return UserRole.TEACHER;
+        }
+        return UserRole.STUDENT;
     }
 
     private String normalizeEmail(String email) {

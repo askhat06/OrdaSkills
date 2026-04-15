@@ -1,6 +1,7 @@
 package kz.skills.elearning.service;
 
 import kz.skills.elearning.entity.Course;
+import kz.skills.elearning.entity.CourseStatus;
 import kz.skills.elearning.entity.Lesson;
 import kz.skills.elearning.repository.CourseRepository;
 import org.springframework.boot.CommandLineRunner;
@@ -30,6 +31,7 @@ public class DataSeeder implements CommandLineRunner {
         course.setInstructorName("Aruzhan Sadykova");
         course.setLevel("Beginner");
         course.setDurationHours(6);
+        course.setStatus(CourseStatus.PUBLISHED);
 
         Lesson lesson = new Lesson();
         lesson.setSlug("intro-to-digital-skills");

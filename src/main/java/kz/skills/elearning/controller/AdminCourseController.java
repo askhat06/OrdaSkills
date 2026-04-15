@@ -3,6 +3,7 @@ package kz.skills.elearning.controller;
 import jakarta.validation.Valid;
 import kz.skills.elearning.dto.AdminCourseRequest;
 import kz.skills.elearning.dto.AdminCourseResponse;
+import kz.skills.elearning.dto.AdminModerationRequest;
 import kz.skills.elearning.service.AdminCourseService;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -32,6 +33,12 @@ public class AdminCourseController {
         return adminCourseService.getCourses();
     }
 
+    /** Moderation queue — courses waiting for admin review. */
+    @GetMapping("/pending")
+    public List<AdminCourseResponse> getPendingCourses() {
+        return adminCourseService.getPendingCourses();
+    }
+
     @GetMapping("/{courseId}")
     public AdminCourseResponse getCourse(@PathVariable Long courseId) {
         return adminCourseService.getCourse(courseId);
@@ -53,5 +60,25 @@ public class AdminCourseController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteCourse(@PathVariable Long courseId) {
         adminCourseService.deleteCourse(courseId);
+    }
+
+    /**
+     * Approve a course in PENDING_REVIEW → PUBLISHED.
+     * Returns 400 if the course is not in PENDING_REVIEW.
+     */
+    @PostMapping("/{courseId}/publish")
+    public AdminCourseResponse publishCourse(@PathVariable Long courseId) {
+        return adminCourseService.publishCourse(courseId);
+    }
+
+    /**
+     * Reject a course in PENDING_REVIEW → REJECTED.
+     * Returns 400 if the course is not in PENDING_REVIEW.
+     * The reason field is mandatory and will be shown to the teacher.
+     */
+    @PostMapping("/{courseId}/reject")
+    public AdminCourseResponse rejectCourse(@PathVariable Long courseId,
+                                            @Valid @RequestBody AdminModerationRequest request) {
+        return adminCourseService.rejectCourse(courseId, request);
     }
 }

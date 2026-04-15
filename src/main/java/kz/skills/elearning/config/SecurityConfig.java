@@ -60,6 +60,7 @@ public class SecurityConfig {
                         auth.requestMatchers("/h2-console/**").permitAll();
                     }
                     auth.requestMatchers("/api/admin/**").hasRole("ADMIN");
+                    auth.requestMatchers("/api/teacher/**").hasRole("TEACHER");
                     auth.requestMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/login").permitAll()
                             .requestMatchers(HttpMethod.GET, "/api/health", "/api/courses/**").permitAll()
                             .requestMatchers(HttpMethod.POST, "/api/enrollments").permitAll()
