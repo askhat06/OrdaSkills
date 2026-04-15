@@ -10,6 +10,8 @@ public record AdminCourseResponse(
         String instructorName,
         String level,
         Integer durationHours,
-        int lessonCount
+        int lessonCount,
+        String status,
+        String ownerEmail
 ) {
 }

@@ -2,6 +2,7 @@ package kz.skills.elearning.dto;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 public class RegisterRequest {
@@ -21,6 +22,14 @@ public class RegisterRequest {
 
     @Size(max = 10, message = "Locale must be at most 10 characters")
     private String locale;
+
+    /**
+     * Optional role selection at registration time.
+     * Accepted values: {@code STUDENT} (default), {@code TEACHER}.
+     * {@code ADMIN} cannot be self-assigned — the service layer enforces this.
+     */
+    @Pattern(regexp = "^(STUDENT|TEACHER)$", message = "Role must be STUDENT or TEACHER")
+    private String role;
 
     public String getFullName() {
         return fullName;
@@ -52,5 +61,13 @@ public class RegisterRequest {
 
     public void setLocale(String locale) {
         this.locale = locale;
+    }
+
+    public String getRole() {
+        return role;
+    }
+
+    public void setRole(String role) {
+        this.role = role;
     }
 }

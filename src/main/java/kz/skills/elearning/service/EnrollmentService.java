@@ -3,10 +3,12 @@ package kz.skills.elearning.service;
 import kz.skills.elearning.dto.EnrollmentRequest;
 import kz.skills.elearning.dto.EnrollmentResponse;
 import kz.skills.elearning.entity.Course;
+import kz.skills.elearning.entity.CourseStatus;
 import kz.skills.elearning.entity.Enrollment;
 import kz.skills.elearning.entity.EnrollmentStatus;
 import kz.skills.elearning.entity.PlatformUser;
 import kz.skills.elearning.entity.UserRole;
+import kz.skills.elearning.exception.BadRequestException;
 import kz.skills.elearning.exception.DuplicateEnrollmentException;
 import kz.skills.elearning.exception.ResourceNotFoundException;
 import kz.skills.elearning.repository.CourseRepository;
@@ -46,6 +48,10 @@ public class EnrollmentService {
     public EnrollmentResponse enroll(EnrollmentRequest request) {
         Course course = courseRepository.findBySlug(request.courseSlug())
                 .orElseThrow(() -> new ResourceNotFoundException("Course not found: " + request.courseSlug()));
+
+        if (course.getStatus() != CourseStatus.PUBLISHED) {
+            throw new BadRequestException("Enrollment is only allowed for published courses");
+        }
 
         String normalizedEmail = normalizeEmail(request.email());
         PlatformUser student = platformUserRepository.findByEmailIgnoreCase(normalizedEmail)

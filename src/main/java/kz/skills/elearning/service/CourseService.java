@@ -5,10 +5,13 @@ import kz.skills.elearning.dto.CourseSummaryResponse;
 import kz.skills.elearning.dto.LessonOutlineResponse;
 import kz.skills.elearning.dto.LessonViewerResponse;
 import kz.skills.elearning.entity.Course;
+import kz.skills.elearning.entity.CourseStatus;
 import kz.skills.elearning.entity.Lesson;
 import kz.skills.elearning.exception.ResourceNotFoundException;
 import kz.skills.elearning.repository.CourseRepository;
+import kz.skills.elearning.repository.EnrollmentRepository;
 import kz.skills.elearning.repository.LessonRepository;
+import kz.skills.elearning.security.PlatformUserPrincipal;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,14 +24,21 @@ public class CourseService {
 
     private final CourseRepository courseRepository;
     private final LessonRepository lessonRepository;
+    private final EnrollmentRepository enrollmentRepository;
 
-    public CourseService(CourseRepository courseRepository, LessonRepository lessonRepository) {
+    public CourseService(CourseRepository courseRepository,
+                         LessonRepository lessonRepository,
+                         EnrollmentRepository enrollmentRepository) {
         this.courseRepository = courseRepository;
         this.lessonRepository = lessonRepository;
+        this.enrollmentRepository = enrollmentRepository;
     }
 
+    /**
+     * Public course catalog — only PUBLISHED courses are visible.
+     */
     public List<CourseSummaryResponse> getCatalog() {
-        return courseRepository.findAllByOrderByCreatedAtDesc()
+        return courseRepository.findByStatusOrderByCreatedAtDesc(CourseStatus.PUBLISHED)
                 .stream()
                 .map(course -> new CourseSummaryResponse(
                         course.getId(),
@@ -43,9 +53,23 @@ public class CourseService {
                 .toList();
     }
 
-    public CourseLandingResponse getCourseLanding(String slug) {
+    /**
+     * Course landing page.
+     *
+     * <p>Visibility rules:
+     * <ul>
+     *   <li>PUBLISHED course → visible to everyone, no auth required.</li>
+     *   <li>Non-published course + user is enrolled → visible (protects users who enrolled
+     *       before the course was rejected or unpublished).</li>
+     *   <li>Non-published course + unauthenticated or not enrolled → 404.
+     *       We return 404 (not 403) to avoid leaking that a draft exists.</li>
+     * </ul>
+     */
+    public CourseLandingResponse getCourseLanding(String slug, PlatformUserPrincipal principal) {
         Course course = courseRepository.findBySlug(slug)
                 .orElseThrow(() -> new ResourceNotFoundException("Course not found: " + slug));
+
+        requireVisible(course, principal, slug);
 
         List<LessonOutlineResponse> lessonResponses = course.getLessons().stream()
                 .sorted(Comparator.comparing(Lesson::getPosition))
@@ -65,10 +89,22 @@ public class CourseService {
         );
     }
 
-    public LessonViewerResponse getLessonViewer(String courseSlug, String lessonSlug) {
+    /**
+     * Lesson viewer.
+     *
+     * <p>Applies the same visibility rules as {@link #getCourseLanding}: a student
+     * who is enrolled can always view lessons regardless of the course's current status.
+     * This prevents a situation where a course is temporarily rejected and enrolled
+     * students suddenly lose access to content they were already studying.
+     */
+    public LessonViewerResponse getLessonViewer(String courseSlug,
+                                                String lessonSlug,
+                                                PlatformUserPrincipal principal) {
         Lesson lesson = lessonRepository.findByCourse_SlugAndSlug(courseSlug, lessonSlug)
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Lesson not found: " + lessonSlug + " for course: " + courseSlug));
+
+        requireVisible(lesson.getCourse(), principal, courseSlug);
 
         return new LessonViewerResponse(
                 lesson.getCourse().getSlug(),
@@ -80,6 +116,31 @@ public class CourseService {
                 lesson.getVideoUrl(),
                 lesson.getContent()
         );
+    }
+
+    // -------------------------------------------------------------------------
+    // Internal helpers
+    // -------------------------------------------------------------------------
+
+    /**
+     * Enforces course visibility for the public-facing endpoints.
+     *
+     * <p>PUBLISHED → always accessible.
+     * Non-published → accessible only if the caller is authenticated AND enrolled.
+     * Otherwise throws {@link ResourceNotFoundException} (→ 404) to avoid
+     * leaking the existence of unpublished content.
+     */
+    private void requireVisible(Course course, PlatformUserPrincipal principal, String slug) {
+        if (course.getStatus() == CourseStatus.PUBLISHED) {
+            return;
+        }
+        if (principal != null
+                && enrollmentRepository.existsByCourse_IdAndStudent_Id(
+                        course.getId(), principal.getId())) {
+            return;
+        }
+        // Return 404, not 403 — do not reveal that this slug exists but is unpublished.
+        throw new ResourceNotFoundException("Course not found: " + slug);
     }
 
     private LessonOutlineResponse toLessonOutline(Lesson lesson) {
