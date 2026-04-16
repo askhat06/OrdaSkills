@@ -8,7 +8,7 @@ import org.springframework.test.context.ActiveProfiles;
         "spring.datasource.url=jdbc:h2:mem:postgresprofile;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE",
         "spring.datasource.driver-class-name=org.h2.Driver",
         "spring.datasource.username=postgres",
-        "spring.datasource.password=As-49510",
+        "spring.datasource.password=",
         "app.security.jwt.secret=c3VwZXItc2VjcmV0LWtleS1mb3ItcG9zdGdyZXMtdGVzdHM=",
         "app.media.video.provider=in-memory",
         "app.media.video.bucket=test-bucket",
