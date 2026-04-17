@@ -31,6 +31,15 @@ public class PlatformUser extends BaseEntity {
     @Column(name = "password_hash", length = 255)
     private String passwordHash;
 
+    @Column(name = "email_verified", nullable = false)
+    private boolean emailVerified = false;
+
+    @Column(name = "verification_token", length = 64)
+    private String verificationToken;
+
+    @Column(name = "token_expires_at")
+    private java.time.LocalDateTime tokenExpiresAt;
+
     @OneToMany(mappedBy = "student", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     private List<Enrollment> enrollments = new ArrayList<>();
 
@@ -88,5 +97,29 @@ public class PlatformUser extends BaseEntity {
 
     public void setPasswordHash(String passwordHash) {
         this.passwordHash = passwordHash;
+    }
+
+    public boolean isEmailVerified() {
+        return emailVerified;
+    }
+
+    public void setEmailVerified(boolean emailVerified) {
+        this.emailVerified = emailVerified;
+    }
+
+    public String getVerificationToken() {
+        return verificationToken;
+    }
+
+    public void setVerificationToken(String verificationToken) {
+        this.verificationToken = verificationToken;
+    }
+
+    public java.time.LocalDateTime getTokenExpiresAt() {
+        return tokenExpiresAt;
+    }
+
+    public void setTokenExpiresAt(java.time.LocalDateTime tokenExpiresAt) {
+        this.tokenExpiresAt = tokenExpiresAt;
     }
 }

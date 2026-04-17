@@ -8,4 +8,6 @@ import java.util.Optional;
 public interface PlatformUserRepository extends JpaRepository<PlatformUser, Long> {
 
     Optional<PlatformUser> findByEmailIgnoreCase(String email);
+
+    Optional<PlatformUser> findByVerificationToken(String verificationToken);
 }

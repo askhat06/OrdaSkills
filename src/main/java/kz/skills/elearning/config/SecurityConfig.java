@@ -62,7 +62,7 @@ public class SecurityConfig {
                     auth.requestMatchers("/api/admin/**").hasRole("ADMIN");
                     auth.requestMatchers("/api/teacher/**").hasRole("TEACHER");
                     auth.requestMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/login").permitAll()
-                            .requestMatchers(HttpMethod.GET, "/api/health", "/api/courses/**").permitAll()
+                            .requestMatchers(HttpMethod.GET, "/api/health", "/api/courses/**", "/api/auth/verify").permitAll()
                             .requestMatchers(HttpMethod.POST, "/api/enrollments").permitAll()
                             .requestMatchers(HttpMethod.GET, "/api/auth/me").authenticated()
                             .anyRequest().authenticated();
