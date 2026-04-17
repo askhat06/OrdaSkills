@@ -29,7 +29,9 @@ jobs:
           cache: maven
 
       - name: Run tests
-        run: ./mvnw test -q
+        run: |
+          chmod +x ./mvnw
+          ./mvnw test -q
 
   # ── 2. Build Docker image & push to GHCR ────────────────────────────────────
   # Runs only on pushes to main or version tags; never on pull requests.
