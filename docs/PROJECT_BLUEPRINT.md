@@ -5,7 +5,7 @@
 - Repository in this workspace: `OrdaSkills` / `elearning-backend`
 - Repository role: backend source of truth
 - Canonical frontend: external `oyn_front` / `jiyuu` React project, not stored in this repo
-- Audit date: `2026-04-15`
+- Audit date: `2026-04-17`
 - Audit method: local backend repo inspection plus user-provided frontend architecture notes
 - Runtime verification status: targeted backend integration coverage for course progress was rerun in this workspace; the external frontend was not rerun here
 - Current default backend profile: `local`
@@ -30,7 +30,7 @@ Orda Skills is a Kazakhstan-focused e-learning MVP whose stable contract now liv
 
 The backend currently provides:
 
-1. JWT register/login/current-user flows,
+1. JWT register/login/current-user flows with **email verification**,
 2. public course catalog and course landing endpoints,
 3. lesson viewer payloads including `videoUrl`,
 4. public enrollment creation with lead-shell support,
@@ -84,8 +84,9 @@ Important consequence:
 | Route | Method | Auth | Purpose | Frontend handling notes |
 | --- | --- | --- | --- | --- |
 | `/api/health` | GET | Public | Liveness probe | Safe for lightweight connectivity checks |
-| `/api/auth/register` | POST | Public | Create account or upgrade a lead-shell user | Expect `201` with auth payload; rate-limited |
-| `/api/auth/login` | POST | Public | Exchange credentials for JWT | Expect generic invalid-credentials errors; rate-limited |
+| `/api/auth/register` | POST | Public | Create account or upgrade a lead-shell user | Returns `201 { "message": "..." }` when email verification is enabled; returns `201 AuthResponse` on local profile (verification disabled). Rate-limited. |
+| `/api/auth/verify` | GET | Public | Verify email via token from link | `?token=` query param; returns `200 AuthResponse` (JWT) on success; `400` for invalid/expired token |
+| `/api/auth/login` | POST | Public | Exchange credentials for JWT | Returns `403` if email not verified; generic `401` for bad credentials; rate-limited |
 | `/api/auth/me` | GET | Authenticated | Return current user snapshot | On `401`, clear stored token and re-auth |
 | `/api/courses` | GET | Public | Catalog listing (PUBLISHED only) | Use as the source of truth for course cards |
 | `/api/courses/{slug}` | GET | Public | Course landing page | Enrolled users can see non-PUBLISHED courses; principal is optional |
@@ -217,6 +218,9 @@ These paths are not in this repo and should be revalidated inside `oyn_front` be
 
 ### Added in this backend repo
 
+- **email verification** on registration: token-gated flow with SMTP delivery via `spring-boot-starter-mail`; `POST /api/auth/register` returns `201 { "message" }` (not JWT) when verification is enabled; `GET /api/auth/verify?token=` validates the token and issues JWT; `POST /api/auth/login` returns `403` if email not yet verified; local profile auto-verifies (no email sent)
+- **V5 database migration**: `email_verified`, `verification_token`, `token_expires_at` columns on `platform_users`
+- **`app.email.*` config**: `verification-enabled`, `base-url`, `from-name`, `token-expiry-hours`; all values driven by env vars with defaults
 - admin course CRUD endpoints and service layer
 - fail-closed non-local configuration using explicit env vars
 - local demo default profile with H2 and in-memory media
@@ -246,6 +250,8 @@ These paths are not in this repo and should be revalidated inside `oyn_front` be
 
 ### Invalidated assumptions
 
+- `POST /api/auth/register` no longer returns `AuthResponse` in production environments; it returns `{ "message": "..." }` and requires email verification before a JWT is issued
+- login now returns `403 Email not verified` before checking credentials when verification is enabled; frontend must handle this as a distinct non-auth failure, not as a `401`
 - the backend no longer defaults to `postgres`; it now defaults to `local`
 - committed fallback secrets for non-local runtime are no longer the intended behavior
 - login no longer tells passwordless users to register first; it now returns a generic invalid-credentials error
@@ -367,11 +373,16 @@ Use these rules to avoid major errors and conflicts:
 17. Treat course progress, step completion, and percent calculation as backend-owned state, not as frontend-derived truth.
 18. Show course status (`DRAFT`, `PENDING_REVIEW`, `PUBLISHED`, `REJECTED`) in the teacher dashboard; surface `rejectionReason` when status is `REJECTED`.
 19. Only render the public course catalog from `/api/courses`; that endpoint returns only `PUBLISHED` courses — do not filter client-side.
+20. `POST /api/auth/register` no longer returns a JWT in production; show a "check your email" screen instead of logging the user in.
+21. Implement a `/verify-email` route that reads the `?token=` query param from the URL, calls `GET /api/auth/verify?token=`, and on `200` stores the returned JWT and redirects to the home/dashboard page.
+22. Handle `403` on login as a distinct "email not verified" state — not as a generic access-denied error. Show messaging that tells the user to check their inbox.
+23. On local dev (profile `local`) registration returns `AuthResponse` directly; the verify route is not needed locally but must still exist in the router.
 
 ## Current State Verified From Source
 
 The following items are directly supported by code in this workspace:
 
+- **email verification** is fully implemented: SMTP send on register, token stored in DB with 24 h expiry, `GET /api/auth/verify?token=` endpoint issues JWT after validation, login blocked with `403` until verified, local profile skips verification and issues JWT immediately
 - the backend supports all required MVP backend routes plus admin course CRUD, admin media endpoints, and teacher course/lesson management
 - the backend exposes authenticated course progress routes under `/api/progress/courses/**`
 - enrollment bootstraps course progress and per-lesson progress-step rows
@@ -430,4 +441,5 @@ If you remember only one thing, remember this:
 - this repo is the backend contract source of truth,
 - the frontend lives elsewhere,
 - integration work must be deliberate, contract-driven, and cross-repo aware,
-- there are three roles (`STUDENT`, `TEACHER`, `ADMIN`); the teacher surface lives under `/api/teacher/**` and is separate from admin.
+- there are three roles (`STUDENT`, `TEACHER`, `ADMIN`); the teacher surface lives under `/api/teacher/**` and is separate from admin,
+- registration no longer issues a JWT in production; the user must verify their email first via `GET /api/auth/verify?token=`.

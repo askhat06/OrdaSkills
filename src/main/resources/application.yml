@@ -17,6 +17,17 @@ spring:
   jackson:
     serialization:
       write-dates-as-timestamps: false
+  mail:
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:25}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
 
 server:
   port: 7777
@@ -35,3 +46,8 @@ app:
       login-max-requests: 5
       register-max-requests: 3
       enrollment-max-requests: 10
+  email:
+    verification-enabled: true
+    base-url: ${APP_BASE_URL:http://localhost:5173}
+    from-name: ${MAIL_FROM_NAME:Oyan Platform}
+    token-expiry-hours: ${EMAIL_TOKEN_EXPIRY:24}

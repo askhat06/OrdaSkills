@@ -6,11 +6,14 @@ import kz.skills.elearning.dto.LoginRequest;
 import kz.skills.elearning.dto.RegisterRequest;
 import kz.skills.elearning.entity.PlatformUser;
 import kz.skills.elearning.entity.UserRole;
+import kz.skills.elearning.exception.BadRequestException;
+import kz.skills.elearning.exception.EmailNotVerifiedException;
 import kz.skills.elearning.exception.InvalidCredentialsException;
 import kz.skills.elearning.exception.UserAlreadyExistsException;
 import kz.skills.elearning.repository.PlatformUserRepository;
 import kz.skills.elearning.security.JwtService;
 import kz.skills.elearning.security.PlatformUserPrincipal;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -19,7 +22,10 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.Locale;
+import java.util.UUID;
 
 @Service
 @Transactional
@@ -29,18 +35,27 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
     private final JwtService jwtService;
+    private final EmailService emailService;
+    private final boolean verificationEnabled;
+    private final int tokenExpiryHours;
 
     public AuthService(PlatformUserRepository platformUserRepository,
                        PasswordEncoder passwordEncoder,
                        AuthenticationManager authenticationManager,
-                       JwtService jwtService) {
+                       JwtService jwtService,
+                       EmailService emailService,
+                       @Value("${app.email.verification-enabled:true}") boolean verificationEnabled,
+                       @Value("${app.email.token-expiry-hours:24}") int tokenExpiryHours) {
         this.platformUserRepository = platformUserRepository;
         this.passwordEncoder = passwordEncoder;
         this.authenticationManager = authenticationManager;
         this.jwtService = jwtService;
+        this.emailService = emailService;
+        this.verificationEnabled = verificationEnabled;
+        this.tokenExpiryHours = tokenExpiryHours;
     }
 
-    public AuthResponse register(RegisterRequest request) {
+    public RegisterResult register(RegisterRequest request) {
         String normalizedEmail = normalizeEmail(request.getEmail());
         String normalizedFullName = normalizeText(request.getFullName());
         String normalizedLocale = normalizeLocale(request.getLocale());
@@ -59,17 +74,45 @@ public class AuthService {
         user.setFullName(normalizedFullName);
         user.setLocale(normalizedLocale);
         user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
-        // Role: honour the request value only when creating a brand-new account.
-        // Lead-shell upgrades preserve the existing role (always STUDENT).
         if (user.getRole() == null) {
             user.setRole(resolveRegistrationRole(request.getRole()));
         }
 
+        if (verificationEnabled) {
+            String token = UUID.randomUUID().toString();
+            user.setVerificationToken(token);
+            user.setTokenExpiresAt(LocalDateTime.now(ZoneOffset.UTC).plusHours(tokenExpiryHours));
+            user.setEmailVerified(false);
+
+            PlatformUser savedUser = platformUserRepository.save(user);
+            emailService.sendVerificationEmail(savedUser.getEmail(), token);
+
+            return RegisterResult.pendingVerification();
+        } else {
+            user.setEmailVerified(true);
+            PlatformUser savedUser = platformUserRepository.save(user);
+            PlatformUserPrincipal principal = PlatformUserPrincipal.from(savedUser);
+            String token = jwtService.generateToken(principal);
+            return RegisterResult.withToken(AuthResponse.of(token, jwtService.getExpirationSeconds(), savedUser));
+        }
+    }
+
+    public AuthResponse verifyEmail(String token) {
+        PlatformUser user = platformUserRepository.findByVerificationToken(token)
+                .orElseThrow(() -> new BadRequestException("Invalid or expired verification token"));
+
+        if (user.getTokenExpiresAt() == null || user.getTokenExpiresAt().isBefore(LocalDateTime.now(ZoneOffset.UTC))) {
+            throw new BadRequestException("Verification token has expired");
+        }
+
+        user.setEmailVerified(true);
+        user.setVerificationToken(null);
+        user.setTokenExpiresAt(null);
+
         PlatformUser savedUser = platformUserRepository.save(user);
         PlatformUserPrincipal principal = PlatformUserPrincipal.from(savedUser);
-        String token = jwtService.generateToken(principal);
-
-        return AuthResponse.of(token, jwtService.getExpirationSeconds(), savedUser);
+        String jwt = jwtService.generateToken(principal);
+        return AuthResponse.of(jwt, jwtService.getExpirationSeconds(), savedUser);
     }
 
     @Transactional(readOnly = true)
@@ -81,6 +124,10 @@ public class AuthService {
 
         if (user.getPasswordHash() == null || user.getPasswordHash().isBlank()) {
             throw new InvalidCredentialsException("Invalid email or password");
+        }
+
+        if (verificationEnabled && !user.isEmailVerified()) {
+            throw new EmailNotVerifiedException("Please verify your email before logging in");
         }
 
         try {
@@ -101,13 +148,6 @@ public class AuthService {
         return CurrentUserResponse.fromPrincipal(principal);
     }
 
-    /**
-     * Maps a registration role string to a {@link UserRole}.
-     * {@code null} or blank → {@code STUDENT} (safe default).
-     * {@code "TEACHER"} → {@code TEACHER}.
-     * Any other value is rejected by the DTO's {@code @Pattern} before reaching here,
-     * but we guard again so that bypassed validation never grants unexpected roles.
-     */
     private UserRole resolveRegistrationRole(String role) {
         if (role != null && role.equalsIgnoreCase(UserRole.TEACHER.name())) {
             return UserRole.TEACHER;
@@ -128,5 +168,14 @@ public class AuthService {
             return "ru";
         }
         return locale.trim().toLowerCase(Locale.ROOT);
+    }
+
+    public record RegisterResult(boolean requiresVerification, AuthResponse authResponse) {
+        static RegisterResult pendingVerification() {
+            return new RegisterResult(true, null);
+        }
+        static RegisterResult withToken(AuthResponse response) {
+            return new RegisterResult(false, response);
+        }
     }
 }

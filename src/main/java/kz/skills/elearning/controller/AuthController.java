@@ -3,6 +3,7 @@ package kz.skills.elearning.controller;
 import kz.skills.elearning.dto.AuthResponse;
 import kz.skills.elearning.dto.CurrentUserResponse;
 import kz.skills.elearning.dto.LoginRequest;
+import kz.skills.elearning.dto.MessageResponse;
 import kz.skills.elearning.dto.RegisterRequest;
 import kz.skills.elearning.security.PlatformUserPrincipal;
 import kz.skills.elearning.service.AuthService;
@@ -14,6 +15,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -27,8 +29,18 @@ public class AuthController {
     }
 
     @PostMapping("/register")
-    public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(authService.register(request));
+    public ResponseEntity<?> register(@Valid @RequestBody RegisterRequest request) {
+        AuthService.RegisterResult result = authService.register(request);
+        if (result.requiresVerification()) {
+            return ResponseEntity.status(HttpStatus.CREATED)
+                    .body(new MessageResponse("Registration successful. Please check your email to verify your account."));
+        }
+        return ResponseEntity.status(HttpStatus.CREATED).body(result.authResponse());
+    }
+
+    @GetMapping("/verify")
+    public ResponseEntity<AuthResponse> verify(@RequestParam String token) {
+        return ResponseEntity.ok(authService.verifyEmail(token));
     }
 
     @PostMapping("/login")
