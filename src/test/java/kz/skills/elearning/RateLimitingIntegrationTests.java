@@ -1,18 +1,21 @@
 package kz.skills.elearning;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import kz.skills.elearning.config.RateLimitProperties;
 import kz.skills.elearning.security.RequestRateLimitFilter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Map;
 
+import static org.mockito.Mockito.doReturn;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -27,10 +30,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "app.media.video.bucket=test-bucket",
         "app.media.video.public-base-url=https://cdn.example.test/videos",
         "app.security.rate-limit.enabled=true",
-        "app.security.rate-limit.window=1m",
-        "app.security.rate-limit.login-max-requests=2",
-        "app.security.rate-limit.register-max-requests=2",
-        "app.security.rate-limit.enrollment-max-requests=2"
+        "app.email.verification-enabled=false"
 })
 @AutoConfigureMockMvc
 @Transactional
@@ -45,9 +45,15 @@ class RateLimitingIntegrationTests {
     @Autowired
     private RequestRateLimitFilter requestRateLimitFilter;
 
+    @SpyBean
+    private RateLimitProperties rateLimitProperties;
+
     @BeforeEach
     void setUp() {
         requestRateLimitFilter.clearBuckets();
+        doReturn(2).when(rateLimitProperties).getLoginMaxRequests();
+        doReturn(2).when(rateLimitProperties).getRegisterMaxRequests();
+        doReturn(2).when(rateLimitProperties).getEnrollmentMaxRequests();
     }
 
     @Test

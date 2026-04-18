@@ -16,7 +16,8 @@ import org.springframework.test.context.ActiveProfiles;
         "app.media.video.public-base-url=https://cdn.example.test/videos",
         "app.media.video.access-key=test-access",
         "app.media.video.secret-key=test-secret",
-        "app.media.video.region=us-east-1"
+        "app.media.video.region=us-east-1",
+        "POSTGRES_DRIVER=org.h2.Driver"
 })
 @ActiveProfiles("prod")
 class PostgresProfileStartupTests {
