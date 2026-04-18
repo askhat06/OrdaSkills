@@ -32,7 +32,13 @@ class ProfileConfigurationTests {
                                 "app.media.video.public-base-url=https://cdn.example.test/videos",
                                 "app.media.video.access-key=test-access",
                                 "app.media.video.secret-key=test-secret",
-                                "app.media.video.region=us-east-1"
+                                "app.media.video.region=us-east-1",
+                                "APP_MEDIA_VIDEO_BUCKET=test-bucket",
+                                "APP_MEDIA_VIDEO_ENDPOINT=https://storage.example.test",
+                                "APP_MEDIA_VIDEO_PUBLIC_BASE_URL=https://cdn.example.test/videos",
+                                "APP_MEDIA_VIDEO_ACCESS_KEY=test-access",
+                                "APP_MEDIA_VIDEO_SECRET_KEY=test-secret",
+                                "APP_CORS_ALLOWED_ORIGINS=http://localhost:3000"
                         )
                         .run();
             } finally {
@@ -40,6 +46,6 @@ class ProfileConfigurationTests {
                     context.close();
                 }
             }
-        }).hasMessageContaining("APP_SECURITY_JWT_SECRET");
+        }).hasStackTraceContaining("APP_SECURITY_JWT_SECRET");
     }
 }
