@@ -7,6 +7,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import kz.skills.elearning.config.RateLimitProperties;
 import kz.skills.elearning.dto.ApiErrorResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
@@ -25,6 +27,8 @@ import java.util.concurrent.ConcurrentLinkedDeque;
 
 @Component
 public class RequestRateLimitFilter extends OncePerRequestFilter {
+
+    private static final Logger log = LoggerFactory.getLogger(RequestRateLimitFilter.class);
 
     private final RateLimitProperties properties;
     private final ObjectMapper objectMapper;
@@ -94,14 +98,17 @@ public class RequestRateLimitFilter extends OncePerRequestFilter {
             return null;
         }
 
-        String servletPath = request.getServletPath();
-        if ("/api/auth/login".equals(servletPath)) {
+        String path = request.getServletPath();
+        if (path == null || path.isEmpty()) {
+            path = request.getRequestURI();
+        }
+        if ("/api/auth/login".equals(path)) {
             return new RateLimitRoute("login", properties.getLoginMaxRequests());
         }
-        if ("/api/auth/register".equals(servletPath)) {
+        if ("/api/auth/register".equals(path)) {
             return new RateLimitRoute("register", properties.getRegisterMaxRequests());
         }
-        if ("/api/enrollments".equals(servletPath)) {
+        if ("/api/enrollments".equals(path)) {
             return new RateLimitRoute("enrollment", properties.getEnrollmentMaxRequests());
         }
         return null;

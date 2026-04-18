@@ -1,21 +1,18 @@
 package kz.skills.elearning;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import kz.skills.elearning.config.RateLimitProperties;
 import kz.skills.elearning.security.RequestRateLimitFilter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Map;
 
-import static org.mockito.Mockito.doReturn;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -45,20 +42,14 @@ class RateLimitingIntegrationTests {
     @Autowired
     private RequestRateLimitFilter requestRateLimitFilter;
 
-    @SpyBean
-    private RateLimitProperties rateLimitProperties;
-
     @BeforeEach
     void setUp() {
         requestRateLimitFilter.clearBuckets();
-        doReturn(2).when(rateLimitProperties).getLoginMaxRequests();
-        doReturn(2).when(rateLimitProperties).getRegisterMaxRequests();
-        doReturn(2).when(rateLimitProperties).getEnrollmentMaxRequests();
     }
 
     @Test
     void loginEndpointReturnsTooManyRequestsAfterLimit() throws Exception {
-        for (int attempt = 0; attempt < 2; attempt++) {
+        for (int attempt = 0; attempt < 5; attempt++) {
             mockMvc.perform(post("/api/auth/login")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(json(Map.of(
@@ -80,7 +71,7 @@ class RateLimitingIntegrationTests {
 
     @Test
     void registerEndpointReturnsTooManyRequestsAfterLimit() throws Exception {
-        for (int attempt = 0; attempt < 2; attempt++) {
+        for (int attempt = 0; attempt < 3; attempt++) {
             mockMvc.perform(post("/api/auth/register")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(json(Map.of(
@@ -95,8 +86,8 @@ class RateLimitingIntegrationTests {
         mockMvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(Map.of(
-                                "fullName", "Student 3",
-                                "email", "student3@example.com",
+                                "fullName", "Student 4",
+                                "email", "student4@example.com",
                                 "password", "Password123!",
                                 "locale", "en-KZ"
                         ))))
@@ -106,7 +97,7 @@ class RateLimitingIntegrationTests {
 
     @Test
     void enrollmentEndpointReturnsTooManyRequestsAfterLimit() throws Exception {
-        for (int attempt = 0; attempt < 2; attempt++) {
+        for (int attempt = 0; attempt < 10; attempt++) {
             mockMvc.perform(post("/api/enrollments")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(json(Map.of(
@@ -122,8 +113,8 @@ class RateLimitingIntegrationTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(Map.of(
                                 "courseSlug", "digital-skills-kz",
-                                "fullName", "Lead 3",
-                                "email", "lead3@example.com",
+                                "fullName", "Lead 11",
+                                "email", "lead11@example.com",
                                 "locale", "en-KZ"
                         ))))
                 .andExpect(status().isTooManyRequests())
