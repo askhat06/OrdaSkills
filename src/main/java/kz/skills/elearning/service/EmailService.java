@@ -19,7 +19,7 @@ public class EmailService {
     private final String appBaseUrl;
 
     public EmailService(JavaMailSender mailSender,
-                        @Value("${spring.mail.username:noreply@example.com}") String fromAddress,
+                        @Value("${app.email.from-address:noreply@example.com}") String fromAddress,
                         @Value("${app.email.from-name:Oyan Platform}") String fromName,
                         @Value("${app.email.base-url:http://localhost:7777}") String appBaseUrl) {
         this.mailSender = mailSender;

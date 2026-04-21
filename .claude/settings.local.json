@@ -2,7 +2,16 @@
   "permissions": {
     "allow": [
       "Bash(xargs grep *)",
-      "Bash(xargs cat *)"
+      "Bash(xargs cat *)",
+      "Bash(git update-index *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(./mvnw test *)",
+      "Read(//c/Program Files/**)",
+      "Bash(export JAVA_HOME=\"/c/Program Files/JetBrains/IntelliJ IDEA 2026.1/jbr\")",
+      "Bash(export PATH=\"$JAVA_HOME/bin:$PATH\")",
+      "Bash(java -version)",
+      "Bash(./mvnw help:evaluate -Dexpression=project.parent.version -q -DforceStdout)"
     ]
   }
 }
