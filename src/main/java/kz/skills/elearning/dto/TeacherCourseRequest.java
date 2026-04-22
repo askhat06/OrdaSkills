@@ -1,11 +1,15 @@
 package kz.skills.elearning.dto;
 
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+
+import java.math.BigDecimal;
 
 public record TeacherCourseRequest(
 
@@ -39,7 +43,12 @@ public record TeacherCourseRequest(
         @NotNull(message = "durationHours is required")
         @Min(value = 1, message = "durationHours must be at least 1")
         @Max(value = 1000, message = "durationHours must be at most 1000")
-        Integer durationHours
+        Integer durationHours,
+
+        /** Optional price. Null or absent means the course is free. */
+        @DecimalMin(value = "0.00", message = "price must be non-negative")
+        @Digits(integer = 8, fraction = 2, message = "price must have at most 8 integer digits and 2 decimal places")
+        BigDecimal price
 
 ) {
 }

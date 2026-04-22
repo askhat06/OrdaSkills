@@ -8,6 +8,7 @@ import kz.skills.elearning.entity.Course;
 import kz.skills.elearning.entity.CourseStatus;
 import kz.skills.elearning.entity.Lesson;
 import kz.skills.elearning.exception.ResourceNotFoundException;
+import kz.skills.elearning.repository.CourseRatingRepository;
 import kz.skills.elearning.repository.CourseRepository;
 import kz.skills.elearning.repository.EnrollmentRepository;
 import kz.skills.elearning.repository.LessonRepository;
@@ -25,13 +26,16 @@ public class CourseService {
     private final CourseRepository courseRepository;
     private final LessonRepository lessonRepository;
     private final EnrollmentRepository enrollmentRepository;
+    private final CourseRatingRepository courseRatingRepository;
 
     public CourseService(CourseRepository courseRepository,
                          LessonRepository lessonRepository,
-                         EnrollmentRepository enrollmentRepository) {
+                         EnrollmentRepository enrollmentRepository,
+                         CourseRatingRepository courseRatingRepository) {
         this.courseRepository = courseRepository;
         this.lessonRepository = lessonRepository;
         this.enrollmentRepository = enrollmentRepository;
+        this.courseRatingRepository = courseRatingRepository;
     }
 
     /**
@@ -48,7 +52,12 @@ public class CourseService {
                         course.getLocale(),
                         course.getLevel(),
                         course.getDurationHours(),
-                        course.getLessons().size()
+                        course.getLessons().size(),
+                        course.getInstructorName(),
+                        enrollmentRepository.countByCourse_Id(course.getId()),
+                        course.getPrice(),
+                        courseRatingRepository.findAverageRatingByCourseId(course.getId()),
+                        courseRatingRepository.countByCourse_Id(course.getId())
                 ))
                 .toList();
     }
