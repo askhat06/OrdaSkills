@@ -1,5 +1,7 @@
 package kz.skills.elearning.dto;
 
+import java.math.BigDecimal;
+
 public record CourseSummaryResponse(
         Long id,
         String slug,
@@ -8,6 +10,11 @@ public record CourseSummaryResponse(
         String locale,
         String level,
         Integer durationHours,
-        Integer lessonCount
+        Integer lessonCount,
+        String instructorName,
+        long enrollmentCount,
+        BigDecimal price,
+        Double averageRating,
+        long ratingCount
 ) {
 }

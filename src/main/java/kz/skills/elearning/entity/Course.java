@@ -15,6 +15,7 @@ import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -62,6 +63,9 @@ public class Course extends BaseEntity {
     private String level;
 
     private Integer durationHours;
+
+    @Column(precision = 10, scale = 2)
+    private BigDecimal price;
 
     @OneToMany(mappedBy = "course", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     private List<Lesson> lessons = new ArrayList<>();
@@ -144,6 +148,14 @@ public class Course extends BaseEntity {
 
     public void setDurationHours(Integer durationHours) {
         this.durationHours = durationHours;
+    }
+
+    public BigDecimal getPrice() {
+        return price;
+    }
+
+    public void setPrice(BigDecimal price) {
+        this.price = price;
     }
 
     public List<Lesson> getLessons() {

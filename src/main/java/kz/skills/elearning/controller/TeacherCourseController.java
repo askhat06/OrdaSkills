@@ -79,6 +79,14 @@ public class TeacherCourseController {
         return teacherCourseService.submitForReview(courseSlug, principal);
     }
 
+    /** Publish course directly: DRAFT or REJECTED → PUBLISHED. */
+    @PostMapping("/{courseSlug}/publish")
+    public TeacherCourseResponse publishCourse(
+            @PathVariable String courseSlug,
+            @AuthenticationPrincipal PlatformUserPrincipal principal) {
+        return teacherCourseService.publishCourse(courseSlug, principal);
+    }
+
     /** Withdraw from review before admin acts: PENDING_REVIEW → DRAFT. */
     @PostMapping("/{courseSlug}/withdraw")
     public TeacherCourseResponse withdrawFromReview(

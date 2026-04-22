@@ -13,6 +13,8 @@ public interface EnrollmentRepository extends JpaRepository<Enrollment, Long> {
 
     boolean existsByCourse_Id(Long courseId);
 
+    long countByCourse_Id(Long courseId);
+
     @EntityGraph(attributePaths = {"course", "student"})
     List<Enrollment> findAllByOrderByEnrolledAtDesc();
 
