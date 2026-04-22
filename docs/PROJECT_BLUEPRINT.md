@@ -5,7 +5,7 @@
 - Repository in this workspace: `OrdaSkills` / `elearning-backend`
 - Repository role: backend source of truth
 - Canonical frontend: external `oyn_front` / `jiyuu` React project, not stored in this repo
-- Audit date: `2026-04-17`
+- Audit date: `2026-04-22`
 - Audit method: local backend repo inspection plus user-provided frontend architecture notes
 - Runtime verification status: targeted backend integration coverage for course progress was rerun in this workspace; the external frontend was not rerun here
 - Current default backend profile: `local`
@@ -35,12 +35,14 @@ The backend currently provides:
 3. lesson viewer payloads including `videoUrl`,
 4. public enrollment creation with lead-shell support,
 5. authenticated enrollment listing,
-6. authenticated course progress tracking with explicit lesson steps,
-7. admin course CRUD with moderation (publish/reject) workflows,
-8. admin lesson video upload, completion, and delete workflows,
-9. teacher course and lesson management with an ownership-gated publication lifecycle.
+6. **course rating** (1–5 stars) submitted by enrolled students,
+7. authenticated course progress tracking with explicit lesson steps,
+8. admin course CRUD with moderation (publish/reject) workflows,
+9. admin lesson video upload, completion, and delete workflows,
+10. teacher course and lesson management with an ownership-gated publication lifecycle,
+11. **course pricing** — teacher-set optional price on each course; `null` means free.
 
-The backend supports three user roles: `STUDENT`, `TEACHER`, and `ADMIN`.
+The backend supports four user roles: `STUDENT`, `TEACHER`, `COMPANY`, and `ADMIN`.
 
 The frontend is an external concern:
 
@@ -99,6 +101,7 @@ Important consequence:
 | `/api/progress/courses/{courseSlug}/steps/{lessonSlug}/complete` | POST | Authenticated + enrolled | Complete one progress step | Recalculates counters and percent |
 | `/api/progress/courses/{courseSlug}/complete` | POST | Authenticated + enrolled | Complete whole course | Supports zero-step completion |
 | `/api/progress/courses/{courseSlug}/reset` | POST | Authenticated + enrolled | Reset progress | Prepares next attempt without incrementing count yet |
+| `/api/courses/{slug}/ratings` | POST | Authenticated + enrolled | Submit or update a star rating (1–5) | Upsert semantics; `204` on success; `403` if not enrolled |
 
 ### Admin routes (`ROLE_ADMIN` required)
 
@@ -126,6 +129,7 @@ Important consequence:
 | `/api/teacher/courses/{courseSlug}` | PUT | Teacher | Update course metadata | Only allowed in DRAFT or REJECTED status |
 | `/api/teacher/courses/{courseSlug}` | DELETE | Teacher | Delete DRAFT course with no enrollments | `409` if enrollments exist; `204` on success |
 | `/api/teacher/courses/{courseSlug}/submit` | POST | Teacher | DRAFT or REJECTED → PENDING_REVIEW | Locks the course for admin review |
+| `/api/teacher/courses/{courseSlug}/publish` | POST | Teacher | DRAFT or REJECTED → PUBLISHED | Publishes directly without admin review |
 | `/api/teacher/courses/{courseSlug}/withdraw` | POST | Teacher | PENDING_REVIEW → DRAFT | Pulls course back before admin acts |
 | `/api/teacher/courses/{courseSlug}/lessons` | GET | Teacher | List lessons for owned course | Returns ordered lesson list |
 | `/api/teacher/courses/{courseSlug}/lessons` | POST | Teacher | Create lesson | `201` on success |
@@ -148,7 +152,7 @@ DRAFT ──(submit)──► PENDING_REVIEW ──(publish)──► PUBLISHED
 
 - `DRAFT`: teacher is building; not visible in the public catalog.
 - `PENDING_REVIEW`: submitted for admin review; locked for teacher edits.
-- `PUBLISHED`: admin-approved; visible in `/api/courses` catalog.
+- `PUBLISHED`: visible in `/api/courses` catalog; set by admin approval or teacher direct-publish.
 - `REJECTED`: admin rejected with a mandatory reason; teacher can edit and resubmit.
 - Admin-created and seeded courses default to `PUBLISHED` (V4 migration default).
 
@@ -189,9 +193,14 @@ DRAFT ──(submit)──► PENDING_REVIEW ──(publish)──► PUBLISHED
 | `src/main/java/kz/skills/elearning/controller/AdminLessonVideoController.java` | Admin media endpoints | Entry point for admin video upload-init, upload-complete, and delete |
 | `src/main/java/kz/skills/elearning/service/AdminLessonVideoService.java` | Video upload orchestration | Shared by admin and teacher video endpoints |
 | `src/main/java/kz/skills/elearning/entity/CourseStatus.java` | Course publication status enum | DRAFT, PENDING_REVIEW, PUBLISHED, REJECTED |
-| `src/main/java/kz/skills/elearning/entity/UserRole.java` | User role enum | STUDENT, TEACHER, ADMIN |
+| `src/main/java/kz/skills/elearning/entity/UserRole.java` | User role enum | STUDENT, TEACHER, COMPANY, ADMIN |
+| `src/main/java/kz/skills/elearning/controller/CourseRatingController.java` | Course rating endpoint | `POST /api/courses/{slug}/ratings`; upsert semantics |
+| `src/main/java/kz/skills/elearning/service/CourseRatingService.java` | Rating upsert and average recalculation | Validates enrollment before persisting |
+| `src/main/java/kz/skills/elearning/entity/CourseRating.java` | Rating entity | One row per `(course, student)` |
 | `src/main/resources/db/migration/V3__add_course_progress_tracking.sql` | Progress persistence contract | Defines aggregate and per-step schema |
 | `src/main/resources/db/migration/V4__add_teacher_role_and_course_status.sql` | Teacher ownership and course status schema | Adds `owner_id`, `status`, `rejection_reason` to `courses` |
+| `src/main/resources/db/migration/V5__add_email_verification.sql` | Email verification schema | Adds `email_verified`, `verification_token`, `token_expires_at` to `platform_users` |
+| `src/main/resources/db/migration/V6__add_course_price_and_ratings.sql` | Price and ratings schema | Adds `price` to `courses`; creates `course_ratings` table |
 | `src/main/resources/application.yml` | Shared config | Source of truth for profile default and rate limits |
 | `src/main/resources/application-local.yml` | Local demo config | H2 + in-memory media + local JWT secret |
 | `src/main/resources/application-postgres.yml` | Non-local env-driven config | Fail-closed runtime config for PostgreSQL, S3, and JWT |
@@ -241,6 +250,13 @@ These paths are not in this repo and should be revalidated inside `oyn_front` be
 - **teacher video upload**: teachers can manage videos for their own courses via the same video service
 - **`CourseOwnershipGuard`** utility enforcing that teachers can only act on their own courses
 - **V4 database migration**: `owner_id`, `status`, `rejection_reason` columns on `courses`
+- **course ratings**: `POST /api/courses/{slug}/ratings` — authenticated enrolled students rate a course 1–5; upsert semantics; `CourseRatingService` recalculates the aggregate average after each submission
+- **course pricing**: optional `price` field (`BigDecimal`) on `TeacherCourseRequest` and `TeacherCourseResponse`; `null` means free; exposed in `CourseSummaryResponse` as `price`
+- **`CourseSummaryResponse` extended**: now includes `instructorName`, `enrollmentCount`, `price`, `averageRating`, `ratingCount`
+- **`AdminCourseResponse` extended**: now includes `status` and `ownerEmail`
+- **V5 database migration**: `email_verified`, `verification_token`, `token_expires_at` columns on `platform_users`
+- **V6 database migration**: `price` column on `courses`; `course_ratings` table with `(course_id, student_id, rating)` unique constraint
+- **four user roles**: `STUDENT`, `TEACHER`, `COMPANY`, `ADMIN` (previously three)
 
 ### Removed from this repo to eliminate architectural confusion
 
@@ -258,7 +274,7 @@ These paths are not in this repo and should be revalidated inside `oyn_front` be
 - anonymous enrollment should not be treated as a profile-update mechanism for existing lead shells
 - `docs/mvp-schema.sql` is not the schema source of truth
 - frontend implementation details must be looked up in `oyn_front`, not inferred from this repo
-- there are now **three roles** (`STUDENT`, `TEACHER`, `ADMIN`), not two; frontend role-based routing must account for `TEACHER`
+- there are now **four roles** (`STUDENT`, `TEACHER`, `COMPANY`, `ADMIN`); frontend role-based routing must account for `TEACHER` and `COMPANY`
 - course visibility in the public catalog is now gated on `PUBLISHED` status; admin-created/seeded courses have `PUBLISHED` as their migration default
 
 ## Backend-Side Conflict Resolution Plan
@@ -398,7 +414,7 @@ The following items are directly supported by code in this workspace:
 - course status transitions are guarded server-side: edits only in DRAFT/REJECTED, submissions only from DRAFT/REJECTED, publish/reject only from PENDING_REVIEW
 - admin-created and seeded courses default to `PUBLISHED` status via the V4 migration default
 - V4 database migration adds `owner_id`, `status`, and `rejection_reason` columns to the `courses` table
-- three user roles are defined: `STUDENT`, `TEACHER`, `ADMIN`
+- four user roles are defined: `STUDENT`, `TEACHER`, `COMPANY`, `ADMIN`
 - JSON `401` and `403` responses are emitted by security entry points in `SecurityConfig`
 - the backend test suite includes coverage for:
   - deleted-user JWT fallback to `401`
@@ -426,7 +442,7 @@ The following frontend claims come from user-provided architecture notes and wer
    - env var naming,
    - API client wrapper,
    - error-handling conventions,
-   - role-based route guards for `STUDENT`, `TEACHER`, and `ADMIN`,
+   - role-based route guards for `STUDENT`, `TEACHER`, `COMPANY`, and `ADMIN`,
    - teacher dashboard integrating the course status lifecycle.
 4. Add cross-repo smoke verification once the proper toolchains are available:
    - backend tests,
@@ -441,5 +457,5 @@ If you remember only one thing, remember this:
 - this repo is the backend contract source of truth,
 - the frontend lives elsewhere,
 - integration work must be deliberate, contract-driven, and cross-repo aware,
-- there are three roles (`STUDENT`, `TEACHER`, `ADMIN`); the teacher surface lives under `/api/teacher/**` and is separate from admin,
+- there are four roles (`STUDENT`, `TEACHER`, `COMPANY`, `ADMIN`); the teacher surface lives under `/api/teacher/**` and is separate from admin,
 - registration no longer issues a JWT in production; the user must verify their email first via `GET /api/auth/verify?token=`.

@@ -1,6 +1,6 @@
 # Frontend Integration Contract: Backend Source of Truth
 
-Audit date: `2026-04-01`
+Audit date: `2026-04-22`
 
 Repository role: Spring Boot backend only
 
@@ -98,7 +98,8 @@ eLearning domain behavior must follow this backend contract. Legacy non-eLearnin
 
 ### 3.1 Confirmed implemented features
 
-- Auth registration via `POST /api/auth/register`
+- Auth registration via `POST /api/auth/register` (may return `MessageResponse` when email verification is required)
+- Email verification via `GET /api/auth/verify?token=`
 - Auth login via `POST /api/auth/login`
 - Session restoration/current-user lookup via `GET /api/auth/me`
 - Public course catalog via `GET /api/courses`
@@ -106,14 +107,20 @@ eLearning domain behavior must follow this backend contract. Legacy non-eLearnin
 - Public lesson viewer via `GET /api/courses/{courseSlug}/lessons/{lessonSlug}`
 - Public enrollment creation via `POST /api/enrollments`
 - Authenticated enrollment listing via `GET /api/enrollments`
+- Authenticated course rating via `POST /api/courses/{slug}/ratings`
 - Authenticated course progress retrieval, start, update, completion, and reset via `/api/progress/courses/**`
+- Teacher course CRUD and lifecycle transitions via `/api/teacher/courses/**`
+- Teacher lesson CRUD and video upload via `/api/teacher/courses/{courseSlug}/lessons/**`
 - Admin course list/get/create/update/delete via `/api/admin/courses`
+- Admin moderation queue via `GET /api/admin/courses/pending`
+- Admin course approve/reject via `POST /api/admin/courses/{courseId}/publish` and `/reject`
 - Admin lesson video upload-init, upload-complete, and delete via `/api/admin/courses/{courseSlug}/lessons/{lessonSlug}`
 - Health check via `GET /api/health`
 - Rate limiting for `POST /api/auth/login`, `POST /api/auth/register`, and `POST /api/enrollments`
 - Automatic progress bootstrap for new enrollments
 - Explicit per-lesson progress tracking with attempt history
-- Role-based access control with `ROLE_ADMIN`
+- Role-based access control with `ROLE_STUDENT`, `ROLE_TEACHER`, `ROLE_COMPANY`, `ROLE_ADMIN`
+- Course status workflow: DRAFT → PENDING_REVIEW → PUBLISHED / REJECTED
 - Local default profile with H2 and in-memory media configuration
 - PostgreSQL/S3 profile path with required env vars
 - Startup data seeding when the course table is empty
@@ -142,12 +149,12 @@ These are important because frontend code must not assume they exist.
 - No cookie/session auth flow
 - No assessments API
 - No localized content API beyond plain `locale` strings on records
-- No lesson CRUD API
-- No admin lesson list endpoint
+- No admin lesson list endpoint (use teacher or public course landing endpoint for lesson data)
 - No pagination or total-count wrapper on list endpoints
 - No backend media proxy route for serving uploaded video files
 - No backend endpoint that publishes allowed upload content types or max file size to the frontend at runtime
 - No admin self-service account creation endpoint
+- No GET endpoint for individual course ratings
 
 ## 4. Endpoint-by-Endpoint API Contract
 
@@ -170,7 +177,7 @@ These are important because frontend code must not assume they exist.
 | `fullName` | string | Stored user name |
 | `email` | string | Lowercased during register/login lookup |
 | `locale` | string | Casing is not globally consistent across all flows |
-| `role` | string | `STUDENT` or `ADMIN` |
+| `role` | string | `STUDENT`, `TEACHER`, `COMPANY`, or `ADMIN` |
 
 #### `CourseSummaryResponse`
 
@@ -186,6 +193,11 @@ List endpoint returns a raw array of these objects.
 | `level` | string or `null` | Optional |
 | `durationHours` | number or `null` | Nullable at entity level |
 | `lessonCount` | number | Count of attached lessons |
+| `instructorName` | string or `null` | Optional |
+| `enrollmentCount` | number | Total number of enrollments |
+| `price` | number or `null` | `null` means the course is free |
+| `averageRating` | number or `null` | Average star rating, `null` if no ratings yet |
+| `ratingCount` | number | Total number of ratings submitted |
 
 #### `CourseLandingResponse`
 
@@ -284,6 +296,52 @@ List endpoint returns a raw array of these objects.
 | `level` | string or `null` | Optional |
 | `durationHours` | number | Required in admin DTO |
 | `lessonCount` | number | Count of lessons currently attached |
+| `status` | string | `DRAFT`, `PENDING_REVIEW`, `PUBLISHED`, or `REJECTED` |
+| `ownerEmail` | string | Email of the teacher who owns the course |
+
+#### `TeacherCourseResponse`
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `id` | number | Course ID |
+| `slug` | string | Canonical slug |
+| `title` | string | Title |
+| `subtitle` | string or `null` | Optional |
+| `description` | string | Description |
+| `locale` | string | Course locale |
+| `level` | string or `null` | Optional |
+| `durationHours` | number | Duration in hours |
+| `price` | number or `null` | `null` means free |
+| `status` | string | `DRAFT`, `PENDING_REVIEW`, `PUBLISHED`, or `REJECTED` |
+| `rejectionReason` | string or `null` | Admin rejection feedback; `null` unless `status == REJECTED` |
+| `lessonCount` | number | Count of lessons currently attached |
+| `createdAt` | string | Serialized `LocalDateTime`, no timezone offset |
+| `updatedAt` | string | Serialized `LocalDateTime`, no timezone offset |
+
+#### `TeacherLessonResponse`
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `id` | number | Lesson ID |
+| `courseSlug` | string | Owning course slug |
+| `slug` | string | Lesson slug (unique within the course) |
+| `title` | string | Lesson title |
+| `summary` | string or `null` | Optional short description |
+| `content` | string | Lesson body |
+| `position` | number | Lesson ordering |
+| `durationMinutes` | number or `null` | Optional |
+| `videoUrl` | string or `null` | Nullable; set after video upload or direct URL |
+| `hasVideo` | boolean | Convenience flag, true when `videoUrl` is not null |
+| `createdAt` | string | Serialized `LocalDateTime`, no timezone offset |
+| `updatedAt` | string | Serialized `LocalDateTime`, no timezone offset |
+
+#### `MessageResponse`
+
+Returned by `POST /api/auth/register` when email verification is required.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `message` | string | Human-readable status message |
 
 #### `AdminVideoUploadInitResponse`
 
@@ -332,22 +390,41 @@ List endpoint returns a raw array of these objects.
 | `password` | string | yes | not blank, length `8..72` | BCrypt encoded |
 | `locale` | string | no | max `10` | Defaults to `"ru"` if null/blank, lowercased on save |
 
-- Success response:
-  - `201 Created`
-  - Body is `AuthResponse`
+- Success response (two variants):
+  - `201 Created` with body `AuthResponse` when email verification is **not** required
+  - `201 Created` with body `MessageResponse` when email verification **is** required — the user must verify before logging in
 - Important statuses:
   - `201` on successful registration or successful lead-shell upgrade
   - `400` on validation failure
   - `409` if the email already belongs to a user with a nonblank password hash
   - `429` if registration rate limit is exceeded
 - Frontend handling notes:
-  - Treat the response `user` object as canonical. It contains normalized values.
+  - Check whether the response body is `AuthResponse` (contains `accessToken`) or `MessageResponse` (contains only `message`). When `MessageResponse` is returned, do not attempt to store a token — direct the user to verify their email.
+  - Treat the response `user` object in `AuthResponse` as canonical. It contains normalized values.
   - Store `accessToken`, use `tokenType` as `"Bearer"`, and treat `expiresInSeconds` as the configured JWT lifetime hint.
   - If registration succeeds for an email that already enrolled anonymously, that is expected backend behavior.
 - Conflict risks if frontend assumes the wrong contract:
+  - If the frontend always expects `AuthResponse`, it will crash or produce stale state when email verification returns `MessageResponse` instead.
   - If the frontend assumes every existing email returns `409`, it will block valid lead-shell upgrades.
   - If the frontend omits `locale`, the backend will silently default it to `"ru"`.
   - If the frontend allows register-email lengths above `120`, it may create an enrollment that can never be upgraded through this route.
+
+### 4.2a `GET /api/auth/verify`
+
+- Auth requirement: Public
+- Purpose: Verify the user's email address using the one-time token sent in the registration email
+- Query parameter:
+  - `token`: the verification token from the email link
+- Success response:
+  - `200 OK`
+  - Body is `AuthResponse`
+- Important statuses:
+  - `200` on valid, unexpired token — the account is now active and the user is logged in
+  - `400` when the token is invalid, expired, or already used
+- Frontend handling notes:
+  - After the user clicks the email link, call this endpoint with the `token` query param.
+  - On `200`, store the returned `accessToken` and hydrate session state — the user is now authenticated.
+  - On `400`, show an error and offer a path to re-register or request a new verification email if that feature exists.
 
 ### 4.3 `POST /api/auth/login`
 
@@ -398,7 +475,7 @@ List endpoint returns a raw array of these objects.
 ### 4.5 `GET /api/courses`
 
 - Auth requirement: Public
-- Purpose: Return the public course catalog
+- Purpose: Return the public course catalog (only PUBLISHED courses are visible here)
 - Request body: none
 - Success response:
   - `200 OK`
@@ -410,9 +487,11 @@ List endpoint returns a raw array of these objects.
 - Frontend handling notes:
   - There is no pagination wrapper and no metadata object.
   - Use `slug` from this payload as the canonical public course identifier.
+  - `price` is `null` for free courses. `averageRating` is `null` if no ratings have been submitted.
 - Conflict risks:
   - Frontend code expecting `items`, `data`, or `pagination` wrappers will break.
   - Frontend code expecting the list to be alphabetical or stable by ID will not match backend ordering.
+  - DRAFT, PENDING_REVIEW, and REJECTED courses are not returned here.
 
 ### 4.6 `GET /api/courses/{slug}`
 
@@ -524,6 +603,33 @@ List endpoint returns a raw array of these objects.
 - Conflict risks:
   - Frontend code that lets learners query arbitrary emails will produce backend `403`.
   - Frontend code that expects admin-only access here is too strict; regular learners can call it for themselves.
+
+### 4.9a `POST /api/courses/{slug}/ratings`
+
+- Auth requirement: Authenticated and enrolled in the target course
+- Purpose: Submit or update a star rating (1–5) for a course
+- Path parameter:
+  - `slug`: exact course slug
+- Request JSON:
+
+| Field | Type | Required | Constraints | Notes |
+| --- | --- | --- | --- | --- |
+| `rating` | number | yes | integer `1..5` | Replaces any existing rating by this user for this course |
+
+- Success response:
+  - `204 No Content`
+- Important statuses:
+  - `204` on successful submit or update
+  - `400` on validation failure (rating outside 1–5)
+  - `401` when unauthenticated
+  - `403` when authenticated but not enrolled
+  - `404` when course slug does not exist
+- Frontend handling notes:
+  - This is an upsert — calling it again with a different value replaces the previous rating.
+  - Do not parse JSON on `204`.
+  - Refetch `GET /api/courses` or `GET /api/courses/{slug}` if the UI needs the updated `averageRating`.
+- Conflict risks:
+  - Frontend code that does not check enrollment status before showing the rating widget may produce `403`.
 
 ### 4.10 Progress endpoints under `/api/progress/courses/{courseSlug}`
 
@@ -789,6 +895,152 @@ Supported routes:
 - Conflict risks:
   - Do not parse JSON on success.
 
+### 4.19 Admin moderation endpoints
+
+#### `GET /api/admin/courses/pending`
+
+- Auth requirement: Admin only
+- Purpose: Return the moderation queue — courses in `PENDING_REVIEW` status
+- Success response:
+  - `200 OK`
+  - Body is a raw JSON array of `AdminCourseResponse`
+- Important statuses:
+  - `200`, `401`, `403`
+
+#### `POST /api/admin/courses/{courseId}/publish`
+
+- Auth requirement: Admin only
+- Purpose: Approve a course in `PENDING_REVIEW` and transition it to `PUBLISHED`
+- Path parameter: `courseId` numeric
+- Request body: none
+- Success response:
+  - `200 OK`
+  - Body is `AdminCourseResponse`
+- Important statuses:
+  - `200` on success
+  - `400` when the course is not in `PENDING_REVIEW`
+  - `401`, `403`, `404`
+
+#### `POST /api/admin/courses/{courseId}/reject`
+
+- Auth requirement: Admin only
+- Purpose: Reject a course in `PENDING_REVIEW` and transition it to `REJECTED`
+- Path parameter: `courseId` numeric
+- Request JSON:
+
+| Field | Type | Required | Constraints | Notes |
+| --- | --- | --- | --- | --- |
+| `reason` | string | yes | length `10..1000` | Shown to the teacher |
+
+- Success response:
+  - `200 OK`
+  - Body is `AdminCourseResponse`
+- Important statuses:
+  - `200` on success
+  - `400` when the course is not in `PENDING_REVIEW`, or `reason` fails validation
+  - `401`, `403`, `404`
+
+### 4.20 Teacher course endpoints under `/api/teacher/courses`
+
+All teacher endpoints require `TEACHER` role. A teacher can only read and mutate courses they own. Accessing another teacher's course returns `403`.
+
+#### `GET /api/teacher/courses`
+
+Returns a raw JSON array of `TeacherCourseResponse` for all courses owned by the calling teacher, regardless of status.
+
+#### `GET /api/teacher/courses/{courseSlug}`
+
+Returns `TeacherCourseResponse` for one owned course. Returns `403` if the teacher does not own it.
+
+#### `POST /api/teacher/courses`
+
+- Purpose: Create a new course in `DRAFT` status
+- Request JSON (`TeacherCourseRequest`):
+
+| Field | Type | Required | Constraints | Notes |
+| --- | --- | --- | --- | --- |
+| `slug` | string | no | lowercase/hyphen, max `120` | Auto-generated from `title` if omitted |
+| `title` | string | yes | not blank, max `180` | |
+| `subtitle` | string | no | max `240` | |
+| `description` | string | yes | not blank, max `2000` | |
+| `locale` | string | yes | not blank, max `20` | |
+| `level` | string | no | max `50` | |
+| `durationHours` | number | yes | integer `1..1000` | |
+| `price` | number | no | `>= 0.00`, max 8 integer digits + 2 decimal | `null` or absent means free |
+
+- Success response: `201 Created` with `TeacherCourseResponse`
+- Important statuses: `201`, `400`, `401`, `403`, `409` (slug conflict)
+
+#### `PUT /api/teacher/courses/{courseSlug}`
+
+- Purpose: Update course metadata
+- Allowed only when status is `DRAFT` or `REJECTED`
+- Same request shape as `POST /api/teacher/courses`
+- Returns `200 OK` with `TeacherCourseResponse`
+- Returns `400` if status is not editable
+
+#### `DELETE /api/teacher/courses/{courseSlug}`
+
+- Purpose: Delete a `DRAFT` course with no enrollments
+- Returns `204 No Content`
+- Returns `409` if enrollments exist or status is not `DRAFT`
+
+#### `POST /api/teacher/courses/{courseSlug}/submit`
+
+- Purpose: Submit for admin review: `DRAFT` or `REJECTED` → `PENDING_REVIEW`
+- Returns `200 OK` with `TeacherCourseResponse`
+
+#### `POST /api/teacher/courses/{courseSlug}/publish`
+
+- Purpose: Publish directly: `DRAFT` or `REJECTED` → `PUBLISHED`
+- Returns `200 OK` with `TeacherCourseResponse`
+
+#### `POST /api/teacher/courses/{courseSlug}/withdraw`
+
+- Purpose: Withdraw from review before admin acts: `PENDING_REVIEW` → `DRAFT`
+- Returns `200 OK` with `TeacherCourseResponse`
+
+### 4.21 Teacher lesson endpoints under `/api/teacher/courses/{courseSlug}/lessons`
+
+All require `TEACHER` role and course ownership. Lessons can be managed when the course is in `DRAFT` or `REJECTED` status.
+
+#### `GET /api/teacher/courses/{courseSlug}/lessons`
+
+Returns a raw JSON array of `TeacherLessonResponse`.
+
+#### `POST /api/teacher/courses/{courseSlug}/lessons`
+
+- Purpose: Create a lesson in the course
+- Request JSON (`TeacherLessonRequest`):
+
+| Field | Type | Required | Constraints | Notes |
+| --- | --- | --- | --- | --- |
+| `slug` | string | no | lowercase/hyphen, max `120` | Auto-generated from `title` if omitted |
+| `title` | string | yes | not blank, max `180` | |
+| `summary` | string | no | max `500` | |
+| `content` | string | yes | not blank, max `8000` | |
+| `videoUrl` | string | no | max `400` | For external video links; platform uploads use the video-upload workflow |
+| `durationMinutes` | number | no | `1..600` | |
+
+- Success response: `201 Created` with `TeacherLessonResponse`
+
+#### `PUT /api/teacher/courses/{courseSlug}/lessons/{lessonSlug}`
+
+Same request shape as create. Returns `200 OK` with `TeacherLessonResponse`.
+
+#### `DELETE /api/teacher/courses/{courseSlug}/lessons/{lessonSlug}`
+
+Returns `204 No Content`.
+
+#### Teacher lesson video upload
+
+Same workflow as admin video upload (see sections 4.16–4.18), but under the teacher path prefix:
+- `POST /api/teacher/courses/{courseSlug}/lessons/{lessonSlug}/video-upload`
+- `POST /api/teacher/courses/{courseSlug}/lessons/{lessonSlug}/video-upload/complete`
+- `DELETE /api/teacher/courses/{courseSlug}/lessons/{lessonSlug}/video`
+
+Ownership is validated before delegating to the shared video service.
+
 ## 5. Frontend-Critical Status and Error Semantics
 
 ### 5.1 Confirmed status handling
@@ -996,18 +1248,22 @@ Frontend implication:
 
 | Visibility | Routes |
 | --- | --- |
-| Public | `GET /api/health`, `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/courses`, `GET /api/courses/{slug}`, `GET /api/courses/{courseSlug}/lessons/{lessonSlug}`, `POST /api/enrollments` |
-| Authenticated | `GET /api/auth/me`, `GET /api/enrollments`, `GET /api/progress/courses/{courseSlug}`, `POST /api/progress/courses/{courseSlug}/start`, `PUT /api/progress/courses/{courseSlug}/current-step`, `POST /api/progress/courses/{courseSlug}/steps/{lessonSlug}/complete`, `POST /api/progress/courses/{courseSlug}/complete`, `POST /api/progress/courses/{courseSlug}/reset` |
+| Public | `GET /api/health`, `POST /api/auth/register`, `GET /api/auth/verify`, `POST /api/auth/login`, `GET /api/courses`, `GET /api/courses/{slug}`, `GET /api/courses/{courseSlug}/lessons/{lessonSlug}`, `POST /api/enrollments` |
+| Authenticated | `GET /api/auth/me`, `GET /api/enrollments`, `POST /api/courses/{slug}/ratings`, `GET /api/progress/courses/{courseSlug}`, `POST /api/progress/courses/{courseSlug}/start`, `PUT /api/progress/courses/{courseSlug}/current-step`, `POST /api/progress/courses/{courseSlug}/steps/{lessonSlug}/complete`, `POST /api/progress/courses/{courseSlug}/complete`, `POST /api/progress/courses/{courseSlug}/reset` |
+| Teacher only | `/api/teacher/**` |
 | Admin only | `/api/admin/**` |
 
 ### 8.2 Admin-only routes
 
 Confirmed admin-only routes:
 - `GET /api/admin/courses`
+- `GET /api/admin/courses/pending`
 - `GET /api/admin/courses/{courseId}`
 - `POST /api/admin/courses`
 - `PUT /api/admin/courses/{courseId}`
 - `DELETE /api/admin/courses/{courseId}`
+- `POST /api/admin/courses/{courseId}/publish`
+- `POST /api/admin/courses/{courseId}/reject`
 - `POST /api/admin/courses/{courseSlug}/lessons/{lessonSlug}/video-upload`
 - `POST /api/admin/courses/{courseSlug}/lessons/{lessonSlug}/video-upload/complete`
 - `DELETE /api/admin/courses/{courseSlug}/lessons/{lessonSlug}/video`
@@ -1016,25 +1272,44 @@ Confirmed admin-only routes:
 
 Confirmed behavior:
 - No token on admin route -> `401 Authentication required`
-- Student token on admin route -> `403 Access denied`
+- Student or teacher token on admin route -> `403 Access denied`
+- No token on teacher route -> `401 Authentication required`
+- Student or admin token on teacher route -> `403 Access denied`
 
 ### 8.4 Frontend route-guarding recommendations
 
 - Guard admin UI routes using authenticated `user.role === 'ADMIN'`.
+- Guard teacher UI routes using authenticated `user.role === 'TEACHER'`.
 - Still handle server-side `401` and `403`, because stale client state can drift.
-- Keep learner routes and admin routes separate in router ownership and layout composition.
+- Keep learner, teacher, and admin routes separate in router ownership and layout composition.
 
 ### 8.5 Important admin-flow limitations
 
 Confirmed limitations:
 - There is no backend endpoint in this repo to create admin users.
-- There is no admin lesson CRUD API.
-- There is no admin lesson list API.
-- Admin course endpoints return `lessonCount` but not lesson data.
+- There is no admin lesson CRUD API. Lesson CRUD belongs to the teacher role.
+- Admin course list endpoints return `lessonCount` but not lesson data.
 
 Frontend implication:
-- If admin UI needs lesson outlines today, it must use the public course landing endpoint or request a backend enhancement.
+- If admin UI needs lesson outlines, use the public course landing endpoint or the teacher lesson endpoints.
 - Do not invent lesson-admin endpoints in the frontend integration layer.
+
+### 8.6 Course status lifecycle
+
+Courses follow a moderation workflow:
+
+| Status | Who sets it | Editable by teacher | Visible in public catalog |
+| --- | --- | --- | --- |
+| `DRAFT` | Created by teacher | Yes | No |
+| `PENDING_REVIEW` | Teacher submits | No (locked) | No |
+| `PUBLISHED` | Admin approves | No | Yes |
+| `REJECTED` | Admin rejects | Yes (can resubmit) | No |
+
+Frontend implications:
+- Only show the "Edit" and "Add Lesson" actions when `status` is `DRAFT` or `REJECTED`.
+- Show `rejectionReason` from `TeacherCourseResponse` when `status == REJECTED`.
+- Show the "Withdraw" action only when `status == PENDING_REVIEW`.
+- The public course catalog only contains `PUBLISHED` courses.
 
 ### 8.6 Local admin video caveat
 
@@ -1056,6 +1331,9 @@ Canonical schema source:
 - `src/main/resources/db/migration/V1__init_schema.sql`
 - `src/main/resources/db/migration/V2__add_lesson_video_uploads.sql`
 - `src/main/resources/db/migration/V3__add_course_progress_tracking.sql`
+- `src/main/resources/db/migration/V4__add_teacher_role_and_course_status.sql`
+- `src/main/resources/db/migration/V5__add_email_verification.sql`
+- `src/main/resources/db/migration/V6__add_course_price_and_ratings.sql`
 
 `docs/mvp-schema.sql` is not the canonical schema anymore.
 
@@ -1063,13 +1341,14 @@ Canonical schema source:
 
 | Table | Important columns | Important constraints |
 | --- | --- | --- |
-| `courses` | `slug`, `title`, `subtitle`, `description`, `locale`, `instructor_name`, `level`, `duration_hours` | `uk_courses_slug` |
+| `courses` | `slug`, `title`, `subtitle`, `description`, `locale`, `instructor_name`, `level`, `duration_hours`, `price`, `status`, `rejection_reason`, `owner_id` | `uk_courses_slug` |
 | `lessons` | `course_id`, `slug`, `title`, `summary`, `content`, `video_url`, `position`, `duration_minutes`, video metadata fields | `uk_lessons_slug_per_course` |
-| `platform_users` | `full_name`, `email`, `locale`, `role`, `password_hash` | `uk_platform_users_email` |
+| `platform_users` | `full_name`, `email`, `locale`, `role`, `password_hash`, `email_verified`, `verification_token`, `verification_token_expires_at` | `uk_platform_users_email` |
 | `enrollments` | `course_id`, `student_id`, `status`, `enrolled_at` | `uk_enrollments_course_user` |
 | `lesson_video_uploads` | `lesson_id`, `object_key`, `original_filename`, `content_type`, `size_bytes`, `expires_at` | one pending upload per lesson, unique object key |
 | `course_progress` | `course_id`, `student_id`, `current_lesson_id`, `status`, `total_steps`, `completed_steps`, `percent_complete`, `attempt_count`, `started_at`, `completed_at`, `reset_at` | one aggregate progress row per `(course, student)` |
 | `course_progress_steps` | `progress_id`, `lesson_id`, `step_order`, `status`, `completed_at` | one progress-step row per `(progress, lesson)` |
+| `course_ratings` | `course_id`, `student_id`, `rating` | one rating per `(course, student)` — upsert semantics |
 
 ### 9.3 Slug behavior
 
@@ -1090,6 +1369,9 @@ Frontend must tolerate `null` for:
 - `CourseSummaryResponse.subtitle`
 - `CourseSummaryResponse.level`
 - `CourseSummaryResponse.durationHours`
+- `CourseSummaryResponse.instructorName`
+- `CourseSummaryResponse.price`
+- `CourseSummaryResponse.averageRating`
 - `CourseLandingResponse.subtitle`
 - `CourseLandingResponse.instructorName`
 - `CourseLandingResponse.level`
@@ -1106,6 +1388,13 @@ Frontend must tolerate `null` for:
 - `AdminCourseResponse.subtitle`
 - `AdminCourseResponse.instructorName`
 - `AdminCourseResponse.level`
+- `TeacherCourseResponse.subtitle`
+- `TeacherCourseResponse.level`
+- `TeacherCourseResponse.price`
+- `TeacherCourseResponse.rejectionReason`
+- `TeacherLessonResponse.summary`
+- `TeacherLessonResponse.durationMinutes`
+- `TeacherLessonResponse.videoUrl`
 
 ### 9.5 Uniqueness and conflict assumptions
 
@@ -1117,6 +1406,7 @@ Confirmed uniqueness rules:
 - One pending lesson video upload row per lesson
 - One course-progress aggregate per `(course, student)`
 - One course-progress step row per `(progress, lesson)`
+- One rating per `(course, student)` — submitting again replaces the existing rating
 
 Frontend implication:
 - `409` is part of normal domain handling, not an exceptional crash-only condition.
@@ -1225,7 +1515,7 @@ These rules are mandatory if the goal is to minimize cross-repo conflicts.
 - Do not use legacy `json-server` auth for eLearning flows.
 - Do not silently swallow `401`, `403`, or `429`.
 - Do not infer DTO shapes from memory or old frontend models. Use backend DTOs and this contract.
-- Do not expose admin actions to non-admin users.
+- Do not expose admin actions to non-admin users, and do not expose teacher actions to non-teacher users.
 - Do not assume lesson viewing requires auth. It is public in the current backend.
 - Do not assume course/list responses contain pagination wrappers or enrollment state.
 - Do not assume admin CRUD routes use course slug. Admin course edit/delete routes use numeric `courseId`.
@@ -1235,6 +1525,11 @@ These rules are mandatory if the goal is to minimize cross-repo conflicts.
 - Do not make locale casing semantically meaningful. Register and enrollment flows normalize differently.
 - Do not allow frontend form constraints to be looser than backend register constraints if the same data might later be reused in registration.
 - Do not parse `LocalDateTime` strings as timezone-safe UTC unless the frontend deliberately applies a convention.
+- Do not assume `POST /api/auth/register` always returns `AuthResponse`. It may return `MessageResponse` when email verification is required. Check the response shape before storing a token.
+- Do not show teacher course edit/lesson UI when the course status is `PENDING_REVIEW` or `PUBLISHED`. Only `DRAFT` and `REJECTED` are editable by the teacher.
+- Do not assume the public course catalog contains DRAFT, PENDING_REVIEW, or REJECTED courses. Only PUBLISHED courses appear there.
+- Do not assume rating submission returns a body. It returns `204 No Content`.
+- Do not allow a teacher to act on another teacher's course. The backend returns `403`, but the frontend should not present the action in the first place.
 
 ## 12. Recommended Frontend Implementation Pattern
 
@@ -1346,6 +1641,11 @@ Recommended sequence:
 | Successful delete responses contain JSON | Admin deletes and upload-complete return `204` no body | Frontend crashes on `response.json()` |
 | Local admin upload works end to end in browser | Local upload-init returns `inmemory://...` and no media route exists | Frontend pretends upload/playback are available when they are not |
 | All datetime fields are timezone-aware JSON instants | Some are `LocalDateTime` strings without offset | Frontend displays wrong times or mis-sorts |
+| `POST /api/auth/register` always returns `AuthResponse` | When email verification is enabled it returns `MessageResponse` instead | Frontend tries to read `accessToken` from a response that has only `message` |
+| Only `STUDENT` and `ADMIN` roles exist | Roles are `STUDENT`, `TEACHER`, `COMPANY`, `ADMIN` | Role-based UI branching misses teacher-specific flows |
+| All courses are always public in the catalog | Only `PUBLISHED` courses appear in the public catalog | Frontend shows stale DRAFT/REJECTED courses or misses newly published ones |
+| There is no lesson CRUD API | Teachers have full lesson CRUD under `/api/teacher/courses/{courseSlug}/lessons` | Teacher dashboard has no way to manage lessons |
+| Admin has no moderation workflow | Admin has `GET /api/admin/courses/pending`, publish, and reject endpoints | Admin UI cannot surface the review queue |
 
 ## 14. Regression-Sensitive Areas
 

@@ -8,11 +8,15 @@ The canonical frontend is not stored in this repository. Per the current project
 
 - Spring Boot API on port `7777`
 - Flyway-managed database schema
-- JWT auth and role-based access rules
+- JWT auth and role-based access rules (`STUDENT`, `TEACHER`, `COMPANY`, `ADMIN`)
+- email verification on registration (profile-dependent)
 - rate limiting for public auth and enrollment endpoints
 - explicit course progress tracking with per-lesson steps
-- admin course CRUD endpoints
+- course status workflow (DRAFT → PENDING_REVIEW → PUBLISHED / REJECTED)
+- teacher course and lesson CRUD endpoints
+- admin course CRUD, moderation queue, publish/reject endpoints
 - admin lesson video upload endpoints
+- course rating system
 - backend tests and integration docs
 
 ## What This Repo Does Not Contain
@@ -38,6 +42,7 @@ If you are a frontend AI agent, use [docs/PROJECT_BLUEPRINT.md](C:/GPT/OrdaSkill
 
 - `GET /api/health`
 - `POST /api/auth/register`
+- `GET /api/auth/verify?token=`
 - `POST /api/auth/login`
 - `GET /api/courses`
 - `GET /api/courses/{slug}`
@@ -48,6 +53,7 @@ If you are a frontend AI agent, use [docs/PROJECT_BLUEPRINT.md](C:/GPT/OrdaSkill
 
 - `GET /api/auth/me`
 - `GET /api/enrollments`
+- `POST /api/courses/{slug}/ratings`
 - `GET /api/progress/courses/{courseSlug}`
 - `POST /api/progress/courses/{courseSlug}/start`
 - `PUT /api/progress/courses/{courseSlug}/current-step`
@@ -55,13 +61,34 @@ If you are a frontend AI agent, use [docs/PROJECT_BLUEPRINT.md](C:/GPT/OrdaSkill
 - `POST /api/progress/courses/{courseSlug}/complete`
 - `POST /api/progress/courses/{courseSlug}/reset`
 
+### Teacher
+
+- `GET /api/teacher/courses`
+- `GET /api/teacher/courses/{courseSlug}`
+- `POST /api/teacher/courses`
+- `PUT /api/teacher/courses/{courseSlug}`
+- `DELETE /api/teacher/courses/{courseSlug}`
+- `POST /api/teacher/courses/{courseSlug}/submit`
+- `POST /api/teacher/courses/{courseSlug}/publish`
+- `POST /api/teacher/courses/{courseSlug}/withdraw`
+- `GET /api/teacher/courses/{courseSlug}/lessons`
+- `POST /api/teacher/courses/{courseSlug}/lessons`
+- `PUT /api/teacher/courses/{courseSlug}/lessons/{lessonSlug}`
+- `DELETE /api/teacher/courses/{courseSlug}/lessons/{lessonSlug}`
+- `POST /api/teacher/courses/{courseSlug}/lessons/{lessonSlug}/video-upload`
+- `POST /api/teacher/courses/{courseSlug}/lessons/{lessonSlug}/video-upload/complete`
+- `DELETE /api/teacher/courses/{courseSlug}/lessons/{lessonSlug}/video`
+
 ### Admin
 
 - `GET /api/admin/courses`
+- `GET /api/admin/courses/pending`
 - `GET /api/admin/courses/{courseId}`
 - `POST /api/admin/courses`
 - `PUT /api/admin/courses/{courseId}`
 - `DELETE /api/admin/courses/{courseId}`
+- `POST /api/admin/courses/{courseId}/publish`
+- `POST /api/admin/courses/{courseId}/reject`
 - `POST /api/admin/courses/{courseSlug}/lessons/{lessonSlug}/video-upload`
 - `POST /api/admin/courses/{courseSlug}/lessons/{lessonSlug}/video-upload/complete`
 - `DELETE /api/admin/courses/{courseSlug}/lessons/{lessonSlug}/video`
