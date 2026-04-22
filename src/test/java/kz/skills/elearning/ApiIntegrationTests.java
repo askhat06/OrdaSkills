@@ -41,7 +41,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "app.media.video.provider=in-memory",
         "app.media.video.public-base-url=https://cdn.example.test/videos",
         "app.media.video.max-file-size-bytes=2048",
-        "app.security.rate-limit.enabled=false"
+        "app.security.rate-limit.enabled=false",
+        "app.email.verification-enabled=false"
 })
 @AutoConfigureMockMvc
 @Transactional
