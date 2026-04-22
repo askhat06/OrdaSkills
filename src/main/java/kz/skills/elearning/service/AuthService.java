@@ -74,9 +74,7 @@ public class AuthService {
         user.setFullName(normalizedFullName);
         user.setLocale(normalizedLocale);
         user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
-        if (user.getRole() == null) {
-            user.setRole(resolveRegistrationRole(request.getRole()));
-        }
+        user.setRole(resolveRegistrationRole(request.getRole()));
 
         if (verificationEnabled) {
             String token = UUID.randomUUID().toString();
@@ -151,6 +149,9 @@ public class AuthService {
     private UserRole resolveRegistrationRole(String role) {
         if (role != null && role.equalsIgnoreCase(UserRole.TEACHER.name())) {
             return UserRole.TEACHER;
+        }
+        if (role != null && role.equalsIgnoreCase(UserRole.COMPANY.name())) {
+            return UserRole.COMPANY;
         }
         return UserRole.STUDENT;
     }
