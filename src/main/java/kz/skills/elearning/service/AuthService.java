@@ -74,9 +74,7 @@ public class AuthService {
         user.setFullName(normalizedFullName);
         user.setLocale(normalizedLocale);
         user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
-        if (user.getRole() == null) {
-            user.setRole(resolveRegistrationRole(request.getRole()));
-        }
+        user.setRole(resolveRegistrationRole(request.getRole()));
 
         if (verificationEnabled) {
             String token = UUID.randomUUID().toString();
