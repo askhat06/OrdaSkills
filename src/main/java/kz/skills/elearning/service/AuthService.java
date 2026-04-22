@@ -152,6 +152,9 @@ public class AuthService {
         if (role != null && role.equalsIgnoreCase(UserRole.TEACHER.name())) {
             return UserRole.TEACHER;
         }
+        if (role != null && role.equalsIgnoreCase(UserRole.COMPANY.name())) {
+            return UserRole.COMPANY;
+        }
         return UserRole.STUDENT;
     }
 
