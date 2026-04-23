@@ -167,29 +167,6 @@ public class TeacherCourseService {
     }
 
     /**
-     * Publishes a course directly: {@code DRAFT} or {@code REJECTED} → {@code PUBLISHED}.
-     * The course must have at least one lesson.
-     */
-    public TeacherCourseResponse publishCourse(String courseSlug, PlatformUserPrincipal principal) {
-        Course course = findCourse(courseSlug);
-        guard.requireOwner(course, principal);
-
-        if (course.getStatus() == CourseStatus.PENDING_REVIEW) {
-            throw new BadRequestException("Course is currently under review. Withdraw it first to publish directly.");
-        }
-        if (course.getStatus() == CourseStatus.PUBLISHED) {
-            throw new BadRequestException("Course is already published.");
-        }
-        if (course.getLessons().isEmpty()) {
-            throw new BadRequestException("Cannot publish a course with no lessons. Add at least one lesson first.");
-        }
-
-        course.setStatus(CourseStatus.PUBLISHED);
-        course.setRejectionReason(null);
-        return toResponse(courseRepository.save(course));
-    }
-
-    /**
      * Withdraws a course from admin review: {@code PENDING_REVIEW} → {@code DRAFT}.
      * Allows a teacher to make changes after submission but before the admin acts.
      */

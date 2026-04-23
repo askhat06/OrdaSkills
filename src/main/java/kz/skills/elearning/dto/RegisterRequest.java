@@ -28,7 +28,7 @@ public class RegisterRequest {
      * Accepted values: {@code STUDENT} (default), {@code TEACHER}.
      * {@code ADMIN} cannot be self-assigned — the service layer enforces this.
      */
-    @Pattern(regexp = "^(STUDENT|TEACHER|COMPANY)$", message = "Role must be STUDENT, TEACHER or COMPANY")
+    @Pattern(regexp = "(?i)^(STUDENT|TEACHER|COMPANY)$", message = "Role must be STUDENT, TEACHER or COMPANY")
     private String role;
 
     public String getFullName() {

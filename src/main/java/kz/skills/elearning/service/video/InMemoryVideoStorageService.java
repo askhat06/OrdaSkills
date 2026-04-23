@@ -5,6 +5,7 @@ import kz.skills.elearning.exception.ResourceNotFoundException;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -43,6 +44,12 @@ public class InMemoryVideoStorageService implements VideoStorageService {
     public String getPlaybackUrl(String objectKey) {
         String baseUrl = properties.getPublicBaseUrl();
         return (baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl) + "/" + objectKey;
+    }
+
+    @Override
+    public String generatePresignedGetUrl(String objectKey, Duration validity) {
+        // In-memory storage has no real signing; return the same local playback URL.
+        return getPlaybackUrl(objectKey);
     }
 
     @Override

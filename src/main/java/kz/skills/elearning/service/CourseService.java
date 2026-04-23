@@ -13,9 +13,11 @@ import kz.skills.elearning.repository.CourseRepository;
 import kz.skills.elearning.repository.EnrollmentRepository;
 import kz.skills.elearning.repository.LessonRepository;
 import kz.skills.elearning.security.PlatformUserPrincipal;
+import kz.skills.elearning.service.video.VideoStorageService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.util.Comparator;
 import java.util.List;
 
@@ -23,19 +25,24 @@ import java.util.List;
 @Transactional(readOnly = true)
 public class CourseService {
 
+    private static final Duration VIDEO_PRESIGN_VALIDITY = Duration.ofMinutes(30);
+
     private final CourseRepository courseRepository;
     private final LessonRepository lessonRepository;
     private final EnrollmentRepository enrollmentRepository;
     private final CourseRatingRepository courseRatingRepository;
+    private final VideoStorageService videoStorageService;
 
     public CourseService(CourseRepository courseRepository,
                          LessonRepository lessonRepository,
                          EnrollmentRepository enrollmentRepository,
-                         CourseRatingRepository courseRatingRepository) {
+                         CourseRatingRepository courseRatingRepository,
+                         VideoStorageService videoStorageService) {
         this.courseRepository = courseRepository;
         this.lessonRepository = lessonRepository;
         this.enrollmentRepository = enrollmentRepository;
         this.courseRatingRepository = courseRatingRepository;
+        this.videoStorageService = videoStorageService;
     }
 
     /**
@@ -115,6 +122,7 @@ public class CourseService {
 
         requireVisible(lesson.getCourse(), principal, courseSlug);
 
+        String videoUrl = resolveVideoUrl(lesson);
         return new LessonViewerResponse(
                 lesson.getCourse().getSlug(),
                 lesson.getCourse().getTitle(),
@@ -122,7 +130,7 @@ public class CourseService {
                 lesson.getTitle(),
                 lesson.getPosition(),
                 lesson.getDurationMinutes(),
-                lesson.getVideoUrl(),
+                videoUrl,
                 lesson.getContent()
         );
     }
@@ -150,6 +158,18 @@ public class CourseService {
         }
         // Return 404, not 403 — do not reveal that this slug exists but is unpublished.
         throw new ResourceNotFoundException("Course not found: " + slug);
+    }
+
+    /**
+     * When a lesson has an S3 storage key, generate a short-lived presigned GET URL
+     * so clients stream directly from storage without the bucket being publicly readable.
+     * Falls back to the stored videoUrl for externally-hosted videos (e.g., YouTube).
+     */
+    private String resolveVideoUrl(Lesson lesson) {
+        if (lesson.getVideoStorageKey() != null) {
+            return videoStorageService.generatePresignedGetUrl(lesson.getVideoStorageKey(), VIDEO_PRESIGN_VALIDITY);
+        }
+        return lesson.getVideoUrl();
     }
 
     private LessonOutlineResponse toLessonOutline(Lesson lesson) {

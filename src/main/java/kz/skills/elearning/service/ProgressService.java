@@ -141,15 +141,15 @@ public class ProgressService {
         CourseProgress progress = context.progress();
         synchronizeProgress(progress, context.lessons());
 
+        boolean hasIncompleteSteps = progress.getSteps().stream()
+                .anyMatch(s -> s.getStatus() != ProgressStepStatus.COMPLETED);
+        if (hasIncompleteSteps) {
+            throw new BadRequestException("Cannot mark course as complete: not all lessons have been completed");
+        }
+
         if (progress.getStatus() != ProgressStatus.COMPLETED) {
             beginAttemptIfNeeded(progress);
             LocalDateTime completedAt = nowUtc();
-            for (CourseProgressStep step : progress.getSteps()) {
-                step.setStatus(ProgressStepStatus.COMPLETED);
-                if (step.getCompletedAt() == null) {
-                    step.setCompletedAt(completedAt);
-                }
-            }
             recalculateMetrics(progress);
             progress.setStatus(ProgressStatus.COMPLETED);
             progress.setCompletedAt(completedAt);

@@ -142,6 +142,7 @@ public class EnrollmentService {
         user.setFullName(request.fullName().trim());
         user.setEmail(normalizedEmail);
         user.setLocale(request.locale().trim());
+        user.setLead(true);
         return user;
     }
 
