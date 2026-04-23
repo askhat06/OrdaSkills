@@ -13,7 +13,10 @@ import kz.skills.elearning.exception.UserAlreadyExistsException;
 import kz.skills.elearning.repository.PlatformUserRepository;
 import kz.skills.elearning.security.JwtService;
 import kz.skills.elearning.security.PlatformUserPrincipal;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.mail.MailException;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -30,6 +33,8 @@ import java.util.UUID;
 @Service
 @Transactional
 public class AuthService {
+
+    private static final Logger log = LoggerFactory.getLogger(AuthService.class);
 
     private final PlatformUserRepository platformUserRepository;
     private final PasswordEncoder passwordEncoder;
@@ -62,7 +67,7 @@ public class AuthService {
 
         PlatformUser user = platformUserRepository.findByEmailIgnoreCase(normalizedEmail).orElse(null);
 
-        if (user != null && user.getPasswordHash() != null && !user.getPasswordHash().isBlank()) {
+        if (user != null && !user.isLead() && user.getPasswordHash() != null && !user.getPasswordHash().isBlank()) {
             throw new UserAlreadyExistsException("User with this email already exists");
         }
 
@@ -75,6 +80,7 @@ public class AuthService {
         user.setLocale(normalizedLocale);
         user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
         user.setRole(resolveRegistrationRole(request.getRole()));
+        user.setLead(false);
 
         if (verificationEnabled) {
             String token = UUID.randomUUID().toString();
@@ -83,7 +89,15 @@ public class AuthService {
             user.setEmailVerified(false);
 
             PlatformUser savedUser = platformUserRepository.save(user);
-            emailService.sendVerificationEmail(savedUser.getEmail(), token);
+
+            // Email sending is intentionally outside the flush boundary so that a transient
+            // SMTP failure does not roll back the already-persisted user row.
+            // If email delivery fails the user can request a resend via /api/auth/resend-verification.
+            try {
+                emailService.sendVerificationEmail(savedUser.getEmail(), token);
+            } catch (MailException ex) {
+                log.error("Verification email delivery failed for {}; user saved, resend required", savedUser.getEmail(), ex);
+            }
 
             return RegisterResult.pendingVerification();
         } else {

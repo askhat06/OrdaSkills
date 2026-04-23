@@ -19,6 +19,7 @@ import org.springframework.security.config.annotation.method.configuration.Enabl
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
@@ -72,7 +73,13 @@ public class SecurityConfig {
                                 writeErrorResponse(response, HttpServletResponse.SC_UNAUTHORIZED, "Unauthorized", "Authentication required"))
                         .accessDeniedHandler((request, response, accessDeniedException) ->
                                 writeErrorResponse(response, HttpServletResponse.SC_FORBIDDEN, "Forbidden", "Access denied")))
-                .headers(headers -> headers.frameOptions(frame -> frame.sameOrigin()))
+                .headers(headers -> headers
+                        .frameOptions(frame -> frame.sameOrigin())
+                        .contentTypeOptions(Customizer.withDefaults())
+                        .referrerPolicy(referrer -> referrer.policy(
+                                ReferrerPolicyHeaderWriter.ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN))
+                        .permissionsPolicy(policy -> policy.policy(
+                                "camera=(), microphone=(), geolocation()")))
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(requestRateLimitFilter, JwtAuthenticationFilter.class);
 

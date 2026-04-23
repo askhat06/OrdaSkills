@@ -46,6 +46,7 @@ app:
       login-max-requests: 5
       register-max-requests: 3
       enrollment-max-requests: 10
+      verify-max-requests: 20
   email:
     verification-enabled: true
     base-url: ${APP_BASE_URL:http://localhost:5173}

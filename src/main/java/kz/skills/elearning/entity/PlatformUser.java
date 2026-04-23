@@ -31,6 +31,9 @@ public class PlatformUser extends BaseEntity {
     @Column(name = "password_hash", length = 255)
     private String passwordHash;
 
+    @Column(name = "is_lead", nullable = false)
+    private boolean lead = false;
+
     @Column(name = "email_verified", nullable = false)
     private boolean emailVerified = false;
 
@@ -97,6 +100,14 @@ public class PlatformUser extends BaseEntity {
 
     public void setPasswordHash(String passwordHash) {
         this.passwordHash = passwordHash;
+    }
+
+    public boolean isLead() {
+        return lead;
+    }
+
+    public void setLead(boolean lead) {
+        this.lead = lead;
     }
 
     public boolean isEmailVerified() {

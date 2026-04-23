@@ -4,8 +4,10 @@ import jakarta.validation.Valid;
 import kz.skills.elearning.dto.AdminCourseRequest;
 import kz.skills.elearning.dto.AdminCourseResponse;
 import kz.skills.elearning.dto.AdminModerationRequest;
+import kz.skills.elearning.security.PlatformUserPrincipal;
 import kz.skills.elearning.service.AdminCourseService;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -46,20 +48,23 @@ public class AdminCourseController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public AdminCourseResponse createCourse(@Valid @RequestBody AdminCourseRequest request) {
-        return adminCourseService.createCourse(request);
+    public AdminCourseResponse createCourse(@Valid @RequestBody AdminCourseRequest request,
+                                            @AuthenticationPrincipal PlatformUserPrincipal principal) {
+        return adminCourseService.createCourse(request, principal);
     }
 
     @PutMapping("/{courseId}")
     public AdminCourseResponse updateCourse(@PathVariable Long courseId,
-                                            @Valid @RequestBody AdminCourseRequest request) {
-        return adminCourseService.updateCourse(courseId, request);
+                                            @Valid @RequestBody AdminCourseRequest request,
+                                            @AuthenticationPrincipal PlatformUserPrincipal principal) {
+        return adminCourseService.updateCourse(courseId, request, principal);
     }
 
     @DeleteMapping("/{courseId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void deleteCourse(@PathVariable Long courseId) {
-        adminCourseService.deleteCourse(courseId);
+    public void deleteCourse(@PathVariable Long courseId,
+                             @AuthenticationPrincipal PlatformUserPrincipal principal) {
+        adminCourseService.deleteCourse(courseId, principal);
     }
 
     /**
@@ -67,8 +72,9 @@ public class AdminCourseController {
      * Returns 400 if the course is not in PENDING_REVIEW.
      */
     @PostMapping("/{courseId}/publish")
-    public AdminCourseResponse publishCourse(@PathVariable Long courseId) {
-        return adminCourseService.publishCourse(courseId);
+    public AdminCourseResponse publishCourse(@PathVariable Long courseId,
+                                             @AuthenticationPrincipal PlatformUserPrincipal principal) {
+        return adminCourseService.publishCourse(courseId, principal);
     }
 
     /**
@@ -78,7 +84,8 @@ public class AdminCourseController {
      */
     @PostMapping("/{courseId}/reject")
     public AdminCourseResponse rejectCourse(@PathVariable Long courseId,
-                                            @Valid @RequestBody AdminModerationRequest request) {
-        return adminCourseService.rejectCourse(courseId, request);
+                                            @Valid @RequestBody AdminModerationRequest request,
+                                            @AuthenticationPrincipal PlatformUserPrincipal principal) {
+        return adminCourseService.rejectCourse(courseId, request, principal);
     }
 }
