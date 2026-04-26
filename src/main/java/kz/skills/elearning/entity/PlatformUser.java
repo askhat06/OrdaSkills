@@ -18,6 +18,12 @@ public class PlatformUser extends BaseEntity {
     @Column(nullable = false, length = 120)
     private String fullName;
 
+    @Column(name = "avatar_url", length = 255)
+private String avatarUrl;
+
+@Column(name = "location", length = 100)
+private String location;
+
     @Column(nullable = false, length = 180)
     private String email;
 
@@ -133,4 +139,10 @@ public class PlatformUser extends BaseEntity {
     public void setTokenExpiresAt(java.time.LocalDateTime tokenExpiresAt) {
         this.tokenExpiresAt = tokenExpiresAt;
     }
+
+    public String getAvatarUrl() { return avatarUrl; }
+public void setAvatarUrl(String avatarUrl) { this.avatarUrl = avatarUrl; }
+
+public String getLocation() { return location; }
+public void setLocation(String location) { this.location = location; }
 }

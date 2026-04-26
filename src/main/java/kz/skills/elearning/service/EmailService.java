@@ -51,4 +51,27 @@ public class EmailService {
             throw ex;
         }
     }
+    public void sendPasswordResetEmail(String to, String token) {
+    String link = appBaseUrl + "/reset-password?token=" + token;
+
+    SimpleMailMessage message = new SimpleMailMessage();
+    message.setFrom(fromName + " <" + fromAddress + ">");
+    message.setTo(to);
+    message.setSubject("Reset your password — Oyan Platform");
+    message.setText(
+            "Hello!\n\n" +
+            "You requested a password reset. Click the link below to set a new password:\n\n" +
+            link + "\n\n" +
+            "The link expires in 1 hour.\n\n" +
+            "If you did not request a password reset, you can ignore this email."
+    );
+
+    try {
+        mailSender.send(message);
+        log.info("Password reset email sent to {}", to);
+    } catch (MailException ex) {
+        log.error("Failed to send password reset email to {}: {}", to, ex.getMessage());
+        throw ex;
+    }
+}
 }

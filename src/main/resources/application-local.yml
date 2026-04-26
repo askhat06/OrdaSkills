@@ -11,16 +11,16 @@ spring:
   jpa:
     show-sql: true
   mail:
-    host: ${MAIL_HOST:localhost}
-    port: ${MAIL_PORT:1025}
-    username: ${MAIL_USERNAME:}
-    password: ${MAIL_PASSWORD:}
+    host: sandbox.smtp.mailtrap.io
+    port: 2525
+    username: e0f2b4443d5a8d
+    password: a8648361ffecb4
     properties:
       mail:
         smtp:
-          auth: false
+          auth: true
           starttls:
-            enable: false
+            enable: true
 
 app:
   media:
@@ -32,5 +32,6 @@ app:
     jwt:
       secret: ${APP_SECURITY_JWT_SECRET_LOCAL:c3VwZXItc2VjcmV0LWtleS1mb3ItbG9jYWwtZGV2LW9ubHk=}
   email:
-    verification-enabled: false
-    from-address: ${MAIL_FROM_ADDRESS:noreply@localhost}
+    verification-enabled: true
+    base-url: http://localhost:3000
+    from-address: noreply@oyan.ink
