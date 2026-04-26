@@ -11,6 +11,8 @@ public class CurrentUserResponse {
     private String email;
     private String locale;
     private UserRole role;
+    private String avatarUrl;
+    private String location;
 
     public static CurrentUserResponse fromEntity(PlatformUser user) {
         CurrentUserResponse response = new CurrentUserResponse();
@@ -19,6 +21,8 @@ public class CurrentUserResponse {
         response.setEmail(user.getEmail());
         response.setLocale(user.getLocale());
         response.setRole(user.getRole() == null ? UserRole.STUDENT : user.getRole());
+        response.setAvatarUrl(user.getAvatarUrl());
+        response.setLocation(user.getLocation());
         return response;
     }
 
@@ -29,46 +33,29 @@ public class CurrentUserResponse {
         response.setEmail(principal.getUsername());
         response.setLocale(principal.getLocale());
         response.setRole(principal.getRole());
+        response.setAvatarUrl(principal.getAvatarUrl());
+        response.setLocation(principal.getLocation());
         return response;
     }
 
-    public Long getId() {
-        return id;
-    }
+    public Long getId() { return id; }
+    public void setId(Long id) { this.id = id; }
 
-    public void setId(Long id) {
-        this.id = id;
-    }
+    public String getFullName() { return fullName; }
+    public void setFullName(String fullName) { this.fullName = fullName; }
 
-    public String getFullName() {
-        return fullName;
-    }
+    public String getEmail() { return email; }
+    public void setEmail(String email) { this.email = email; }
 
-    public void setFullName(String fullName) {
-        this.fullName = fullName;
-    }
+    public String getLocale() { return locale; }
+    public void setLocale(String locale) { this.locale = locale; }
 
-    public String getEmail() {
-        return email;
-    }
+    public UserRole getRole() { return role; }
+    public void setRole(UserRole role) { this.role = role; }
 
-    public void setEmail(String email) {
-        this.email = email;
-    }
+    public String getAvatarUrl() { return avatarUrl; }
+    public void setAvatarUrl(String avatarUrl) { this.avatarUrl = avatarUrl; }
 
-    public String getLocale() {
-        return locale;
-    }
-
-    public void setLocale(String locale) {
-        this.locale = locale;
-    }
-
-    public UserRole getRole() {
-        return role;
-    }
-
-    public void setRole(UserRole role) {
-        this.role = role;
-    }
+    public String getLocation() { return location; }
+    public void setLocation(String location) { this.location = location; }
 }
