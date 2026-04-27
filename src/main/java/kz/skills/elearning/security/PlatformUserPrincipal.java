@@ -17,19 +17,25 @@ public class PlatformUserPrincipal implements UserDetails {
     private final String fullName;
     private final String locale;
     private final UserRole role;
+    private final String avatarUrl;
+    private final String location;
 
     public PlatformUserPrincipal(Long id,
                                  String email,
                                  String passwordHash,
                                  String fullName,
                                  String locale,
-                                 UserRole role) {
+                                 UserRole role,
+                                 String avatarUrl,
+                                 String location) {
         this.id = id;
         this.email = email;
         this.passwordHash = passwordHash;
         this.fullName = fullName;
         this.locale = locale;
         this.role = role == null ? UserRole.STUDENT : role;
+        this.avatarUrl = avatarUrl;
+        this.location = location;
     }
 
     public static PlatformUserPrincipal from(PlatformUser user) {
@@ -39,25 +45,18 @@ public class PlatformUserPrincipal implements UserDetails {
                 user.getPasswordHash(),
                 user.getFullName(),
                 user.getLocale(),
-                user.getRole()
+                user.getRole(),
+                user.getAvatarUrl(),
+                user.getLocation()
         );
     }
 
-    public Long getId() {
-        return id;
-    }
-
-    public String getFullName() {
-        return fullName;
-    }
-
-    public String getLocale() {
-        return locale;
-    }
-
-    public UserRole getRole() {
-        return role;
-    }
+    public Long getId() { return id; }
+    public String getFullName() { return fullName; }
+    public String getLocale() { return locale; }
+    public UserRole getRole() { return role; }
+    public String getAvatarUrl() { return avatarUrl; }
+    public String getLocation() { return location; }
 
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
@@ -65,32 +64,20 @@ public class PlatformUserPrincipal implements UserDetails {
     }
 
     @Override
-    public String getPassword() {
-        return passwordHash;
-    }
+    public String getPassword() { return passwordHash; }
 
     @Override
-    public String getUsername() {
-        return email;
-    }
+    public String getUsername() { return email; }
 
     @Override
-    public boolean isAccountNonExpired() {
-        return true;
-    }
+    public boolean isAccountNonExpired() { return true; }
 
     @Override
-    public boolean isAccountNonLocked() {
-        return true;
-    }
+    public boolean isAccountNonLocked() { return true; }
 
     @Override
-    public boolean isCredentialsNonExpired() {
-        return true;
-    }
+    public boolean isCredentialsNonExpired() { return true; }
 
     @Override
-    public boolean isEnabled() {
-        return true;
-    }
+    public boolean isEnabled() { return true; }
 }

@@ -175,6 +175,43 @@ public class AuthService {
         return CurrentUserResponse.fromEntity(platformUserRepository.save(user));
     }
 
+    public void forgotPassword(String email) {
+        String normalizedEmail = normalizeEmail(email);
+        PlatformUser user = platformUserRepository.findByEmailIgnoreCase(normalizedEmail).orElse(null);
+        if (user == null) {
+            return;
+        }
+
+        String token = UUID.randomUUID().toString();
+        user.setVerificationToken(token);
+        user.setTokenExpiresAt(LocalDateTime.now(ZoneOffset.UTC).plusHours(1));
+        platformUserRepository.save(user);
+
+        try {
+            emailService.sendPasswordResetEmail(user.getEmail(), token);
+        } catch (MailException ex) {
+            log.error("Password reset email delivery failed for {}", user.getEmail(), ex);
+        }
+    }
+
+    public void resetPassword(String token, String newPassword) {
+        PlatformUser user = platformUserRepository.findByVerificationToken(token)
+                .orElseThrow(() -> new BadRequestException("Invalid or expired reset token"));
+
+        if (user.getTokenExpiresAt() == null || user.getTokenExpiresAt().isBefore(LocalDateTime.now(ZoneOffset.UTC))) {
+            throw new BadRequestException("Reset token has expired");
+        }
+
+        if (newPassword == null || newPassword.length() < 8) {
+            throw new BadRequestException("Password must be at least 8 characters");
+        }
+
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        user.setVerificationToken(null);
+        user.setTokenExpiresAt(null);
+        platformUserRepository.save(user);
+    }
+
     private UserRole resolveRegistrationRole(String role) {
         if (role != null && role.equalsIgnoreCase(UserRole.TEACHER.name())) {
             return UserRole.TEACHER;

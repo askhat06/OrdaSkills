@@ -33,6 +33,8 @@ public class CurrentUserResponse {
         response.setEmail(principal.getUsername());
         response.setLocale(principal.getLocale());
         response.setRole(principal.getRole());
+        response.setLocation(principal.getLocation());
+        response.setAvatarUrl(principal.getAvatarUrl());
         return response;
     }
 

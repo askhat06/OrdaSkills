@@ -2,9 +2,11 @@ package kz.skills.elearning.controller;
 
 import kz.skills.elearning.dto.AuthResponse;
 import kz.skills.elearning.dto.CurrentUserResponse;
+import kz.skills.elearning.dto.ForgotPasswordRequest;
 import kz.skills.elearning.dto.LoginRequest;
 import kz.skills.elearning.dto.MessageResponse;
 import kz.skills.elearning.dto.RegisterRequest;
+import kz.skills.elearning.dto.ResetPasswordRequest;
 import kz.skills.elearning.dto.UpdateProfileRequest;
 import kz.skills.elearning.security.PlatformUserPrincipal;
 import kz.skills.elearning.service.AuthService;
@@ -60,5 +62,17 @@ public class AuthController {
             @AuthenticationPrincipal PlatformUserPrincipal principal,
             @Valid @RequestBody UpdateProfileRequest request) {
         return ResponseEntity.ok(authService.updateProfile(principal, request));
+    }
+
+    @PostMapping("/forgot-password")
+    public ResponseEntity<MessageResponse> forgotPassword(@RequestBody ForgotPasswordRequest request) {
+        authService.forgotPassword(request.getEmail());
+        return ResponseEntity.ok(new MessageResponse("If this email exists, a reset link has been sent."));
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<MessageResponse> resetPassword(@RequestBody ResetPasswordRequest request) {
+        authService.resetPassword(request.getToken(), request.getNewPassword());
+        return ResponseEntity.ok(new MessageResponse("Password reset successfully."));
     }
 }
