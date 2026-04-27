@@ -2,7 +2,7 @@ spring:
   application:
     name: elearning-backend
   profiles:
-    default: local
+    default: postgres
     group:
       prod: postgres
   jpa:
@@ -52,3 +52,6 @@ app:
     base-url: ${APP_BASE_URL:http://localhost:5173}
     from-name: ${MAIL_FROM_NAME:Oyan Platform}
     token-expiry-hours: ${EMAIL_TOKEN_EXPIRY:24}
+  admin:
+    email: ${ADMIN_EMAIL:}
+    password: ${ADMIN_PASSWORD:}

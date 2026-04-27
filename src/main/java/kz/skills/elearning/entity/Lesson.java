@@ -36,7 +36,7 @@ public class Lesson extends BaseEntity {
     @Column(length = 500)
     private String summary;
 
-    @Column(nullable = false, length = 8000)
+    @Column(length = 8000)
     private String content;
 
     @Column(length = 400)

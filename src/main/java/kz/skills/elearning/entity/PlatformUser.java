@@ -43,6 +43,12 @@ public class PlatformUser extends BaseEntity {
     @Column(name = "token_expires_at")
     private java.time.LocalDateTime tokenExpiresAt;
 
+    @Column(name = "location", length = 255)
+    private String location;
+
+    @Column(name = "avatar_url", length = 500)
+    private String avatarUrl;
+
     @OneToMany(mappedBy = "student", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     private List<Enrollment> enrollments = new ArrayList<>();
 
@@ -132,5 +138,21 @@ public class PlatformUser extends BaseEntity {
 
     public void setTokenExpiresAt(java.time.LocalDateTime tokenExpiresAt) {
         this.tokenExpiresAt = tokenExpiresAt;
+    }
+
+    public String getLocation() {
+        return location;
+    }
+
+    public void setLocation(String location) {
+        this.location = location;
+    }
+
+    public String getAvatarUrl() {
+        return avatarUrl;
+    }
+
+    public void setAvatarUrl(String avatarUrl) {
+        this.avatarUrl = avatarUrl;
     }
 }

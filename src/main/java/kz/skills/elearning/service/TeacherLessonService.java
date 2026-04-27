@@ -181,7 +181,7 @@ public class TeacherLessonService {
     private void apply(Lesson lesson, TeacherLessonRequest request) {
         lesson.setTitle(request.title().trim());
         lesson.setSummary(trimToNull(request.summary()));
-        lesson.setContent(request.content().trim());
+        lesson.setContent(trimToNull(request.content()));
         lesson.setVideoUrl(trimToNull(request.videoUrl()));
         lesson.setDurationMinutes(request.durationMinutes());
     }

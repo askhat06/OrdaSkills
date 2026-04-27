@@ -4,11 +4,13 @@ import kz.skills.elearning.dto.AuthResponse;
 import kz.skills.elearning.dto.CurrentUserResponse;
 import kz.skills.elearning.dto.LoginRequest;
 import kz.skills.elearning.dto.RegisterRequest;
+import kz.skills.elearning.dto.UpdateProfileRequest;
 import kz.skills.elearning.entity.PlatformUser;
 import kz.skills.elearning.entity.UserRole;
 import kz.skills.elearning.exception.BadRequestException;
 import kz.skills.elearning.exception.EmailNotVerifiedException;
 import kz.skills.elearning.exception.InvalidCredentialsException;
+import kz.skills.elearning.exception.ResourceNotFoundException;
 import kz.skills.elearning.exception.UserAlreadyExistsException;
 import kz.skills.elearning.repository.PlatformUserRepository;
 import kz.skills.elearning.security.JwtService;
@@ -157,7 +159,20 @@ public class AuthService {
 
     @Transactional(readOnly = true)
     public CurrentUserResponse me(PlatformUserPrincipal principal) {
-        return CurrentUserResponse.fromPrincipal(principal);
+        PlatformUser user = platformUserRepository.findById(principal.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        return CurrentUserResponse.fromEntity(user);
+    }
+
+    public CurrentUserResponse updateProfile(PlatformUserPrincipal principal, UpdateProfileRequest request) {
+        PlatformUser user = platformUserRepository.findById(principal.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        user.setFullName(normalizeText(request.getFullName()));
+        user.setLocation(request.getLocation());
+        user.setAvatarUrl(request.getAvatarUrl());
+
+        return CurrentUserResponse.fromEntity(platformUserRepository.save(user));
     }
 
     private UserRole resolveRegistrationRole(String role) {
