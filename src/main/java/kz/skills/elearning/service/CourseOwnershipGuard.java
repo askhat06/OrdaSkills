@@ -42,13 +42,11 @@ public class CourseOwnershipGuard {
     }
 
     /**
-     * Asserts that the course is in a status that allows content modifications.
+     * Asserts that the course metadata (title, description, etc.) can be modified.
+     * Only {@code DRAFT} and {@code REJECTED} courses allow metadata edits — changes
+     * to published or under-review courses require admin action first.
      *
-     * <p>Only {@code DRAFT} and {@code REJECTED} courses can be edited. A course that
-     * is {@code PENDING_REVIEW} is locked while the admin reviews it. A {@code PUBLISHED}
-     * course must be withdrawn first (teacher action) or unpublished by admin.
-     *
-     * @throws BadRequestException if the course is not editable
+     * @throws BadRequestException if the course is not in an editable status
      */
     public void requireEditable(Course course) {
         if (course.getStatus() != CourseStatus.DRAFT
@@ -60,11 +58,36 @@ public class CourseOwnershipGuard {
     }
 
     /**
-     * Convenience method: asserts ownership AND editable status in one call.
-     * Use this for all lesson write operations and course metadata updates.
+     * Asserts that lessons and videos can be added or modified for this course.
+     * Blocked only while the course is {@code PENDING_REVIEW} (locked for admin review).
+     * {@code PUBLISHED} courses allow lesson/video changes so teachers can enrich
+     * already-live content without going through a full re-review cycle.
+     *
+     * @throws BadRequestException if the course is under admin review
+     */
+    public void requireLessonEditable(Course course) {
+        if (course.getStatus() == CourseStatus.PENDING_REVIEW) {
+            throw new BadRequestException(
+                    "Cannot modify lessons while the course is under admin review. "
+                    + "Withdraw the course first.");
+        }
+    }
+
+    /**
+     * Convenience method: asserts ownership AND metadata-editable status.
+     * Use this for course metadata updates only.
      */
     public void requireOwnerAndEditable(Course course, PlatformUserPrincipal principal) {
         requireOwner(course, principal);
         requireEditable(course);
+    }
+
+    /**
+     * Convenience method: asserts ownership AND lesson-editable status.
+     * Use this for all lesson and video write operations.
+     */
+    public void requireOwnerAndLessonEditable(Course course, PlatformUserPrincipal principal) {
+        requireOwner(course, principal);
+        requireLessonEditable(course);
     }
 }

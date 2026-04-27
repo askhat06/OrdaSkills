@@ -68,7 +68,7 @@ public class TeacherLessonService {
                                               TeacherLessonRequest request,
                                               PlatformUserPrincipal principal) {
         Course course = findCourse(courseSlug);
-        guard.requireOwnerAndEditable(course, principal);
+        guard.requireOwnerAndLessonEditable(course, principal);
 
         String slug = resolveUniqueSlug(request.slug(), request.title(), course.getId());
         int position = nextPosition(course);
@@ -97,7 +97,7 @@ public class TeacherLessonService {
                                               TeacherLessonRequest request,
                                               PlatformUserPrincipal principal) {
         Course course = findCourse(courseSlug);
-        guard.requireOwnerAndEditable(course, principal);
+        guard.requireOwnerAndLessonEditable(course, principal);
 
         Lesson lesson = findLesson(courseSlug, lessonSlug);
 
@@ -130,7 +130,7 @@ public class TeacherLessonService {
                              String lessonSlug,
                              PlatformUserPrincipal principal) {
         Course course = findCourse(courseSlug);
-        guard.requireOwnerAndEditable(course, principal);
+        guard.requireOwnerAndLessonEditable(course, principal);
 
         Lesson lesson = findLesson(courseSlug, lessonSlug);
         int deletedPosition = lesson.getPosition();
@@ -160,7 +160,7 @@ public class TeacherLessonService {
      */
     public void requireOwnershipForVideoOps(String courseSlug, PlatformUserPrincipal principal) {
         Course course = findCourse(courseSlug);
-        guard.requireOwnerAndEditable(course, principal);
+        guard.requireOwnerAndLessonEditable(course, principal);
     }
 
     // -------------------------------------------------------------------------
