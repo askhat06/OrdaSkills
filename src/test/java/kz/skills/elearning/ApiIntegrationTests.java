@@ -90,6 +90,7 @@ class ApiIntegrationTests {
         lesson.setSlug(LESSON_SLUG);
         lesson.setTitle("Introduction to Digital Skills");
         lesson.setPosition(1);
+        lesson.setVideoUrl("https://example.com/videos/intro-to-digital-skills");
 
         Lesson lessonTwo = new Lesson();
         lessonTwo.setSlug(SECOND_LESSON_SLUG);
