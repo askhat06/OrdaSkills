@@ -3,6 +3,7 @@ package kz.skills.elearning;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import kz.skills.elearning.entity.Course;
+import kz.skills.elearning.entity.CourseStatus;
 import kz.skills.elearning.entity.Lesson;
 import kz.skills.elearning.entity.PlatformUser;
 import kz.skills.elearning.entity.UserRole;
@@ -77,6 +78,27 @@ class ApiIntegrationTests {
     @BeforeEach
     void setUp() {
         inMemoryVideoStorageService.clear();
+
+        Course course = new Course();
+        course.setSlug(COURSE_SLUG);
+        course.setTitle("Digital Skills for Career Growth in Kazakhstan");
+        course.setDescription("Test course for integration tests");
+        course.setLocale("en-KZ");
+        course.setStatus(CourseStatus.PUBLISHED);
+
+        Lesson lesson = new Lesson();
+        lesson.setSlug(LESSON_SLUG);
+        lesson.setTitle("Introduction to Digital Skills");
+        lesson.setPosition(1);
+
+        Lesson lessonTwo = new Lesson();
+        lessonTwo.setSlug(SECOND_LESSON_SLUG);
+        lessonTwo.setTitle("Online Collaboration Basics");
+        lessonTwo.setPosition(2);
+
+        course.addLesson(lesson);
+        course.addLesson(lessonTwo);
+        courseRepository.save(course);
     }
 
     @Test

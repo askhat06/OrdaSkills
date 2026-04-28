@@ -1,6 +1,10 @@
 package kz.skills.elearning;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import kz.skills.elearning.entity.Course;
+import kz.skills.elearning.entity.CourseStatus;
+import kz.skills.elearning.entity.Lesson;
+import kz.skills.elearning.repository.CourseRepository;
 import kz.skills.elearning.security.RequestRateLimitFilter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -42,9 +46,27 @@ class RateLimitingIntegrationTests {
     @Autowired
     private RequestRateLimitFilter requestRateLimitFilter;
 
+    @Autowired
+    private CourseRepository courseRepository;
+
     @BeforeEach
     void setUp() {
         requestRateLimitFilter.clearBuckets();
+
+        Course course = new Course();
+        course.setSlug("digital-skills-kz");
+        course.setTitle("Digital Skills for Career Growth in Kazakhstan");
+        course.setDescription("Test course for rate limit tests");
+        course.setLocale("en-KZ");
+        course.setStatus(CourseStatus.PUBLISHED);
+
+        Lesson lesson = new Lesson();
+        lesson.setSlug("intro-to-digital-skills");
+        lesson.setTitle("Introduction to Digital Skills");
+        lesson.setPosition(1);
+
+        course.addLesson(lesson);
+        courseRepository.save(course);
     }
 
     @Test
