@@ -18,12 +18,6 @@ public class PlatformUser extends BaseEntity {
     @Column(nullable = false, length = 120)
     private String fullName;
 
-    @Column(name = "avatar_url", length = 255)
-private String avatarUrl;
-
-@Column(name = "location", length = 100)
-private String location;
-
     @Column(nullable = false, length = 180)
     private String email;
 
@@ -48,6 +42,12 @@ private String location;
 
     @Column(name = "token_expires_at")
     private java.time.LocalDateTime tokenExpiresAt;
+
+    @Column(name = "location", length = 255)
+    private String location;
+
+    @Column(name = "avatar_url", length = 500)
+    private String avatarUrl;
 
     @OneToMany(mappedBy = "student", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     private List<Enrollment> enrollments = new ArrayList<>();
@@ -140,9 +140,19 @@ private String location;
         this.tokenExpiresAt = tokenExpiresAt;
     }
 
-    public String getAvatarUrl() { return avatarUrl; }
-public void setAvatarUrl(String avatarUrl) { this.avatarUrl = avatarUrl; }
+    public String getLocation() {
+        return location;
+    }
 
-public String getLocation() { return location; }
-public void setLocation(String location) { this.location = location; }
+    public void setLocation(String location) {
+        this.location = location;
+    }
+
+    public String getAvatarUrl() {
+        return avatarUrl;
+    }
+
+    public void setAvatarUrl(String avatarUrl) {
+        this.avatarUrl = avatarUrl;
+    }
 }

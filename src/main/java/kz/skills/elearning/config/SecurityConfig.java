@@ -62,10 +62,12 @@ public class SecurityConfig {
                     }
                     auth.requestMatchers("/api/admin/**").hasRole("ADMIN");
                     auth.requestMatchers("/api/teacher/**").hasRole("TEACHER");
-auth.requestMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/login", "/api/auth/forgot-password", "/api/auth/reset-password").permitAll()                            .requestMatchers(HttpMethod.GET, "/api/health", "/api/courses/**", "/api/auth/verify").permitAll()
+                    auth.requestMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/login",
+                                    "/api/auth/forgot-password", "/api/auth/reset-password").permitAll()
+                            .requestMatchers(HttpMethod.GET, "/api/health", "/api/courses/**", "/api/auth/verify").permitAll()
                             .requestMatchers(HttpMethod.POST, "/api/enrollments").permitAll()
-.requestMatchers(HttpMethod.GET, "/api/auth/me").authenticated()
-.requestMatchers(HttpMethod.PUT, "/api/auth/me").authenticated()                            .anyRequest().authenticated();
+                            .requestMatchers(HttpMethod.GET, "/api/auth/me").authenticated()
+                            .anyRequest().authenticated();
                 })
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint((request, response, authException) ->

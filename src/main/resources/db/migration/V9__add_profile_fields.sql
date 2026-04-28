@@ -1,0 +1,2 @@
+ALTER TABLE platform_users ADD COLUMN IF NOT EXISTS location VARCHAR(255);
+ALTER TABLE platform_users ADD COLUMN IF NOT EXISTS avatar_url VARCHAR(500);

@@ -10,6 +10,7 @@ import kz.skills.elearning.entity.UserRole;
 import kz.skills.elearning.exception.BadRequestException;
 import kz.skills.elearning.exception.EmailNotVerifiedException;
 import kz.skills.elearning.exception.InvalidCredentialsException;
+import kz.skills.elearning.exception.ResourceNotFoundException;
 import kz.skills.elearning.exception.UserAlreadyExistsException;
 import kz.skills.elearning.repository.PlatformUserRepository;
 import kz.skills.elearning.security.JwtService;
@@ -91,6 +92,9 @@ public class AuthService {
 
             PlatformUser savedUser = platformUserRepository.save(user);
 
+            // Email sending is intentionally outside the flush boundary so that a transient
+            // SMTP failure does not roll back the already-persisted user row.
+            // If email delivery fails the user can request a resend via /api/auth/resend-verification.
             try {
                 emailService.sendVerificationEmail(savedUser.getEmail(), token);
             } catch (MailException ex) {
@@ -154,64 +158,59 @@ public class AuthService {
     }
 
     @Transactional(readOnly = true)
-public CurrentUserResponse me(PlatformUserPrincipal principal) {
-    PlatformUser user = platformUserRepository.findByEmailIgnoreCase(principal.getUsername())
-            .orElseThrow(() -> new BadRequestException("User not found"));
-    return CurrentUserResponse.fromEntity(user);
-}
-    public CurrentUserResponse updateMe(PlatformUserPrincipal principal, UpdateProfileRequest request) {
-    PlatformUser user = platformUserRepository.findByEmailIgnoreCase(principal.getUsername())
-            .orElseThrow(() -> new BadRequestException("User not found"));
+    public CurrentUserResponse me(PlatformUserPrincipal principal) {
+        PlatformUser user = platformUserRepository.findById(principal.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        return CurrentUserResponse.fromEntity(user);
+    }
 
-    if (request.getFullName() != null && !request.getFullName().isBlank()) {
+    public CurrentUserResponse updateProfile(PlatformUserPrincipal principal, UpdateProfileRequest request) {
+        PlatformUser user = platformUserRepository.findById(principal.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
         user.setFullName(normalizeText(request.getFullName()));
-    }
-    if (request.getLocation() != null && !request.getLocation().isBlank()) {
-        user.setLocation(normalizeText(request.getLocation()));
-    }
-    if (request.getAvatarUrl() != null && !request.getAvatarUrl().isBlank()) {
-        user.setAvatarUrl(normalizeText(request.getAvatarUrl()));
+        user.setLocation(request.getLocation());
+        user.setAvatarUrl(request.getAvatarUrl());
+
+        return CurrentUserResponse.fromEntity(platformUserRepository.save(user));
     }
 
-    PlatformUser saved = platformUserRepository.save(user);
-    PlatformUserPrincipal updatedPrincipal = PlatformUserPrincipal.from(saved);
-    return CurrentUserResponse.fromPrincipal(updatedPrincipal);
-}
+    public void forgotPassword(String email) {
+        String normalizedEmail = normalizeEmail(email);
+        PlatformUser user = platformUserRepository.findByEmailIgnoreCase(normalizedEmail).orElse(null);
+        if (user == null) {
+            return;
+        }
 
-public void forgotPassword(String email) {
-    String normalizedEmail = normalizeEmail(email);
-    PlatformUser user = platformUserRepository.findByEmailIgnoreCase(normalizedEmail).orElse(null);
-    if (user == null) return; // не раскрываем существование email
+        String token = UUID.randomUUID().toString();
+        user.setVerificationToken(token);
+        user.setTokenExpiresAt(LocalDateTime.now(ZoneOffset.UTC).plusHours(1));
+        platformUserRepository.save(user);
 
-    String token = UUID.randomUUID().toString();
-    user.setVerificationToken(token);
-    user.setTokenExpiresAt(LocalDateTime.now(ZoneOffset.UTC).plusHours(1));
-    platformUserRepository.save(user);
-
-    try {
-        emailService.sendPasswordResetEmail(user.getEmail(), token);
-    } catch (MailException ex) {
-        log.error("Password reset email delivery failed for {}", user.getEmail(), ex);
-    }
-}
-
-public void resetPassword(String token, String newPassword) {
-    PlatformUser user = platformUserRepository.findByVerificationToken(token)
-            .orElseThrow(() -> new BadRequestException("Invalid or expired reset token"));
-
-    if (user.getTokenExpiresAt() == null || user.getTokenExpiresAt().isBefore(LocalDateTime.now(ZoneOffset.UTC))) {
-        throw new BadRequestException("Reset token has expired");
+        try {
+            emailService.sendPasswordResetEmail(user.getEmail(), token);
+        } catch (MailException ex) {
+            log.error("Password reset email delivery failed for {}", user.getEmail(), ex);
+        }
     }
 
-    if (newPassword == null || newPassword.length() < 8) {
-        throw new BadRequestException("Password must be at least 8 characters");
-    }
+    public void resetPassword(String token, String newPassword) {
+        PlatformUser user = platformUserRepository.findByVerificationToken(token)
+                .orElseThrow(() -> new BadRequestException("Invalid or expired reset token"));
 
-    user.setPasswordHash(passwordEncoder.encode(newPassword));
-    user.setVerificationToken(null);
-    user.setTokenExpiresAt(null);
-    platformUserRepository.save(user);
-}
+        if (user.getTokenExpiresAt() == null || user.getTokenExpiresAt().isBefore(LocalDateTime.now(ZoneOffset.UTC))) {
+            throw new BadRequestException("Reset token has expired");
+        }
+
+        if (newPassword == null || newPassword.length() < 8) {
+            throw new BadRequestException("Password must be at least 8 characters");
+        }
+
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        user.setVerificationToken(null);
+        user.setTokenExpiresAt(null);
+        platformUserRepository.save(user);
+    }
 
     private UserRole resolveRegistrationRole(String role) {
         if (role != null && role.equalsIgnoreCase(UserRole.TEACHER.name())) {

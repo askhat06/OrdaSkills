@@ -4,13 +4,32 @@ spring:
     username: ${POSTGRES_USER}
     password: ${POSTGRES_PASSWORD}
     driver-class-name: ${POSTGRES_DRIVER:org.postgresql.Driver}
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 20000
+      idle-timeout: 300000
   jpa:
     show-sql: false
+  h2:
+    console:
+      enabled: false
+
+logging:
+  level:
+    root: WARN
+    kz.skills.elearning: INFO
+    org.springframework.web: WARN
+    org.hibernate: WARN
+    org.flywaydb: INFO
 
 app:
   cors:
-    allowed-origins: "${APP_CORS_ALLOWED_ORIGINS}"
-
+    allowed-origins:
+      - https://oyan.ink
+      - https://www.oyan.ink
+      - http://localhost:3000
+      - http://localhost:5173
   media:
     video:
       provider: s3
@@ -25,7 +44,7 @@ app:
       allowed-content-types:
         - video/mp4
         - video/webm
-      presign-duration: ${APP_MEDIA_VIDEO_PRESIGN_DURATION:15m}
+      presign-duration: ${APP_MEDIA_VIDEO_PRESIGN_DURATION:2h}
       path-style-access-enabled: ${APP_MEDIA_VIDEO_PATH_STYLE_ACCESS_ENABLED:true}
   security:
     jwt:

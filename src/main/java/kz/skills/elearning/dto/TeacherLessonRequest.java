@@ -24,7 +24,6 @@ public record TeacherLessonRequest(
         @Size(max = 500, message = "summary must be at most 500 characters")
         String summary,
 
-        @NotBlank(message = "content is required")
         @Size(max = 8000, message = "content must be at most 8000 characters")
         String content,
 

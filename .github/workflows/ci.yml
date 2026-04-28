@@ -7,7 +7,6 @@ on:
   pull_request:
     branches: [main]
 
-# Minimal default permissions; the build-and-push job escalates only what it needs
 permissions:
   contents: read
 
@@ -21,10 +20,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Java 17 (Temurin)
+      - name: Set up Java 21 (Temurin)
         uses: actions/setup-java@v4
         with:
-          java-version: "17"
+          java-version: "21"
           distribution: temurin
           cache: maven
 
@@ -33,8 +32,54 @@ jobs:
           chmod +x ./mvnw
           ./mvnw test -q
 
-  # ── 2. Build Docker image & push to GHCR ────────────────────────────────────
-  # Runs only on pushes to main or version tags; never on pull requests.
+  # ── 2. Deploy JAR to Hetzner ─────────────────────────────────────────────────
+  # Runs only on push to main (not on pull requests, not on tags).
+  #
+  # Required GitHub Secrets (Settings → Secrets → Actions):
+  #   DEPLOY_SSH_KEY      — private key content (cat ~/.ssh/hetzner_edu)
+  #   DEPLOY_KNOWN_HOSTS  — ssh-keyscan output  (ssh-keyscan -H 65.108.147.48)
+  deploy:
+    name: Deploy to Hetzner
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          java-version: "21"
+          distribution: temurin
+          cache: maven
+
+      - name: Build JAR
+        run: |
+          chmod +x ./mvnw
+          ./mvnw clean package -DskipTests -q
+
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          echo "${{ secrets.DEPLOY_KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
+
+      - name: Copy JAR to server
+        run: |
+          scp -i ~/.ssh/deploy_key \
+            target/elearning-backend-0.0.1-SNAPSHOT.jar \
+            deploy@65.108.147.48:/opt/edu-api/app.jar
+
+      - name: Restart service
+        run: |
+          ssh -i ~/.ssh/deploy_key deploy@65.108.147.48 \
+            "sudo systemctl restart edu-api && sudo systemctl status edu-api --no-pager -l"
+
+  # ── 3. Build Docker image & push to GHCR ────────────────────────────────────
+  # Kept for image versioning. Runs on push to main and version tags.
   build-and-push:
     name: Build & Push Docker Image
     needs: test
@@ -43,7 +88,7 @@ jobs:
 
     permissions:
       contents: read
-      packages: write   # needed to push to ghcr.io
+      packages: write
 
     steps:
       - name: Checkout
@@ -59,18 +104,15 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract Docker metadata (tags & labels)
+      - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
-            # branch push → ghcr.io/…:main
             type=ref,event=branch
-            # version tag v1.2.3 → :1.2.3 and :1.2
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            # short commit SHA → :sha-abc1234
             type=sha,prefix=sha-,format=short
 
       - name: Build and push
@@ -80,6 +122,5 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          # Layer cache stored in GitHub Actions cache (free, per-repo)
           cache-from: type=gha
           cache-to: type=gha,mode=max

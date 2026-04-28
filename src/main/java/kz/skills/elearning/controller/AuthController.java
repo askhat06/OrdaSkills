@@ -2,9 +2,12 @@ package kz.skills.elearning.controller;
 
 import kz.skills.elearning.dto.AuthResponse;
 import kz.skills.elearning.dto.CurrentUserResponse;
+import kz.skills.elearning.dto.ForgotPasswordRequest;
 import kz.skills.elearning.dto.LoginRequest;
 import kz.skills.elearning.dto.MessageResponse;
 import kz.skills.elearning.dto.RegisterRequest;
+import kz.skills.elearning.dto.ResetPasswordRequest;
+import kz.skills.elearning.dto.UpdateProfileRequest;
 import kz.skills.elearning.security.PlatformUserPrincipal;
 import kz.skills.elearning.service.AuthService;
 import jakarta.validation.Valid;
@@ -13,14 +16,11 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import kz.skills.elearning.dto.UpdateProfileRequest;
-import org.springframework.web.bind.annotation.PutMapping;
-import kz.skills.elearning.dto.ForgotPasswordRequest;
-import kz.skills.elearning.dto.ResetPasswordRequest;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -56,21 +56,23 @@ public class AuthController {
     public ResponseEntity<CurrentUserResponse> me(@AuthenticationPrincipal PlatformUserPrincipal principal) {
         return ResponseEntity.ok(authService.me(principal));
     }
-    @PutMapping("/me")
-public ResponseEntity<CurrentUserResponse> updateMe(
-        @AuthenticationPrincipal PlatformUserPrincipal principal,
-        @RequestBody UpdateProfileRequest request) {
-    return ResponseEntity.ok(authService.updateMe(principal, request));
-}
-@PostMapping("/forgot-password")
-public ResponseEntity<MessageResponse> forgotPassword(@RequestBody ForgotPasswordRequest request) {
-    authService.forgotPassword(request.getEmail());
-    return ResponseEntity.ok(new MessageResponse("If this email exists, a reset link has been sent."));
-}
 
-@PostMapping("/reset-password")
-public ResponseEntity<MessageResponse> resetPassword(@RequestBody ResetPasswordRequest request) {
-    authService.resetPassword(request.getToken(), request.getNewPassword());
-    return ResponseEntity.ok(new MessageResponse("Password reset successfully."));
-}
+    @PutMapping("/me")
+    public ResponseEntity<CurrentUserResponse> updateProfile(
+            @AuthenticationPrincipal PlatformUserPrincipal principal,
+            @Valid @RequestBody UpdateProfileRequest request) {
+        return ResponseEntity.ok(authService.updateProfile(principal, request));
+    }
+
+    @PostMapping("/forgot-password")
+    public ResponseEntity<MessageResponse> forgotPassword(@RequestBody ForgotPasswordRequest request) {
+        authService.forgotPassword(request.getEmail());
+        return ResponseEntity.ok(new MessageResponse("If this email exists, a reset link has been sent."));
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<MessageResponse> resetPassword(@RequestBody ResetPasswordRequest request) {
+        authService.resetPassword(request.getToken(), request.getNewPassword());
+        return ResponseEntity.ok(new MessageResponse("Password reset successfully."));
+    }
 }
