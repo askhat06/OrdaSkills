@@ -105,7 +105,8 @@ eLearning domain behavior must follow this backend contract. Legacy non-eLearnin
 - Public course catalog via `GET /api/courses`
 - Public course landing via `GET /api/courses/{slug}`
 - Public lesson viewer via `GET /api/courses/{courseSlug}/lessons/{lessonSlug}`
-- Public enrollment creation via `POST /api/enrollments`
+- Public enrollment creation via `POST /api/enrollments` (requires courseSlug + fullName + email + locale in body)
+- Authenticated self-enrollment via `POST /api/enrollments/courses/{courseSlug}` (requires JWT; no body needed — uses principal identity)
 - Authenticated enrollment listing via `GET /api/enrollments`
 - Authenticated course rating via `POST /api/courses/{slug}/ratings`
 - Authenticated course progress retrieval, start, update, completion, and reset via `/api/progress/courses/**`

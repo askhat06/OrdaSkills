@@ -15,9 +15,11 @@ import kz.skills.elearning.repository.CourseRepository;
 import kz.skills.elearning.repository.EnrollmentRepository;
 import kz.skills.elearning.repository.PlatformUserRepository;
 import kz.skills.elearning.security.PlatformUserPrincipal;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.security.access.AccessDeniedException;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -43,6 +45,36 @@ public class EnrollmentService {
         this.courseRepository = courseRepository;
         this.platformUserRepository = platformUserRepository;
         this.progressService = progressService;
+    }
+
+    public EnrollmentResponse enrollAuthenticated(String courseSlug, PlatformUserPrincipal principal) {
+        if (principal == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authentication required");
+        }
+
+        Course course = courseRepository.findBySlug(courseSlug)
+                .orElseThrow(() -> new ResourceNotFoundException("Course not found: " + courseSlug));
+
+        if (course.getStatus() != CourseStatus.PUBLISHED) {
+            throw new BadRequestException("Enrollment is only allowed for published courses");
+        }
+
+        PlatformUser student = platformUserRepository.findById(principal.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        if (enrollmentRepository.existsByCourse_IdAndStudent_Id(course.getId(), student.getId())) {
+            throw new DuplicateEnrollmentException("Student already enrolled in course: " + course.getSlug());
+        }
+
+        Enrollment enrollment = new Enrollment();
+        enrollment.setCourse(course);
+        enrollment.setStudent(student);
+        enrollment.setStatus(EnrollmentStatus.ENROLLED);
+        enrollment.setEnrolledAt(LocalDateTime.now(ZoneOffset.UTC));
+
+        Enrollment saved = enrollmentRepository.save(enrollment);
+        progressService.initializeProgressForEnrollment(saved);
+        return toResponse(saved);
     }
 
     public EnrollmentResponse enroll(EnrollmentRequest request) {
@@ -86,7 +118,7 @@ public class EnrollmentService {
     @Transactional(readOnly = true)
     public List<EnrollmentResponse> getEnrollments(String courseSlug, String email, PlatformUserPrincipal principal) {
         if (principal == null) {
-            throw new AccessDeniedException("Authentication required");
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authentication required");
         }
 
         if (principal.getRole() == UserRole.ADMIN) {
