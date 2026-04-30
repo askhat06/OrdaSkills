@@ -18,7 +18,7 @@ public record TeacherLessonRequest(
         String slug,
 
         @NotBlank(message = "title is required")
-        @Size(max = 180, message = "title must be at most 180 characters")
+        @Size(min = 3, max = 180, message = "title must be between 3 and 180 characters")
         String title,
 
         @Size(max = 500, message = "summary must be at most 500 characters")

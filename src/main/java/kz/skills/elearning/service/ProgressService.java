@@ -19,8 +19,9 @@ import kz.skills.elearning.repository.EnrollmentRepository;
 import kz.skills.elearning.repository.PlatformUserRepository;
 import kz.skills.elearning.security.PlatformUserPrincipal;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.security.access.AccessDeniedException;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
@@ -414,7 +415,7 @@ public class ProgressService {
 
     private PlatformUserPrincipal requireAuthenticatedPrincipal(PlatformUserPrincipal principal) {
         if (principal == null) {
-            throw new AccessDeniedException("Authentication required");
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authentication required");
         }
         return principal;
     }
