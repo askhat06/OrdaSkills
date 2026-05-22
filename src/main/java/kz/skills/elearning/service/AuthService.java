@@ -18,7 +18,6 @@ import kz.skills.elearning.security.PlatformUserPrincipal;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.mail.MailException;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -97,7 +96,7 @@ public class AuthService {
             // If email delivery fails the user can request a resend via /api/auth/resend-verification.
             try {
                 emailService.sendVerificationEmail(savedUser.getEmail(), token);
-            } catch (MailException ex) {
+            } catch (Exception ex) {
                 log.error("Verification email delivery failed for {}; user saved, resend required", savedUser.getEmail(), ex);
             }
 
@@ -189,7 +188,7 @@ public class AuthService {
 
         try {
             emailService.sendPasswordResetEmail(user.getEmail(), token);
-        } catch (MailException ex) {
+        } catch (Exception ex) {
             log.error("Password reset email delivery failed for {}", user.getEmail(), ex);
         }
     }

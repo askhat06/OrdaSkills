@@ -11,7 +11,8 @@
       "Bash(export JAVA_HOME=\"/c/Program Files/JetBrains/IntelliJ IDEA 2026.1/jbr\")",
       "Bash(export PATH=\"$JAVA_HOME/bin:$PATH\")",
       "Bash(java -version)",
-      "Bash(./mvnw help:evaluate -Dexpression=project.parent.version -q -DforceStdout)"
+      "Bash(./mvnw help:evaluate -Dexpression=project.parent.version -q -DforceStdout)",
+      "Bash(git *)"
     ]
   }
 }

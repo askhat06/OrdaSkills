@@ -1,77 +1,70 @@
 package kz.skills.elearning.service;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.resend.Resend;
+import com.resend.core.exception.ResendException;
+import com.resend.services.emails.model.CreateEmailOptions;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.mail.MailException;
-import org.springframework.mail.SimpleMailMessage;
-import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
+
+import java.util.List;
 
 @Service
 public class EmailService {
 
-    private static final Logger log = LoggerFactory.getLogger(EmailService.class);
+    @Value("${RESEND_API_KEY}")
+    private String apiKey;
 
-    private final JavaMailSender mailSender;
-    private final String fromAddress;
-    private final String fromName;
-    private final String appBaseUrl;
+    @Value("${app.email.from-address}")
+    private String fromAddress;
 
-    public EmailService(JavaMailSender mailSender,
-                        @Value("${app.email.from-address:noreply@example.com}") String fromAddress,
-                        @Value("${app.email.from-name:Oyan Platform}") String fromName,
-                        @Value("${app.email.base-url:http://localhost:7777}") String appBaseUrl) {
-        this.mailSender = mailSender;
-        this.fromAddress = fromAddress;
-        this.fromName = fromName;
-        this.appBaseUrl = appBaseUrl;
+    @Value("${app.email.from-name}")
+    private String fromName;
+
+    @Value("${app.email.base-url:http://localhost:5173}")
+    private String baseUrl;
+
+    public void sendVerificationEmail(String toEmail, String token) {
+        String link = baseUrl + "/api/auth/verify-email?token=" + token;
+        send(toEmail,
+                "Подтвердите ваш email — Oyan",
+                """
+                <h2>Добро пожаловать на Oyan!</h2>
+                <p>Нажмите кнопку ниже для подтверждения email:</p>
+                <a href="%s" style="background:#f5a623;color:white;padding:12px 24px;
+                   text-decoration:none;border-radius:6px;display:inline-block;">
+                   Подтвердить email
+                </a>
+                <p>Ссылка действует 24 часа.</p>
+                """.formatted(link));
     }
 
-    public void sendVerificationEmail(String to, String token) {
-        String link = appBaseUrl + "/verify-email?token=" + token;
+    public void sendPasswordResetEmail(String toEmail, String token) {
+        String link = baseUrl + "/reset-password?token=" + token;
+        send(toEmail,
+                "Сброс пароля — Oyan",
+                """
+                <h2>Сброс пароля</h2>
+                <p>Нажмите кнопку ниже для установки нового пароля:</p>
+                <a href="%s" style="background:#f5a623;color:white;padding:12px 24px;
+                   text-decoration:none;border-radius:6px;display:inline-block;">
+                   Сбросить пароль
+                </a>
+                <p>Ссылка действует 1 час.</p>
+                """.formatted(link));
+    }
 
-        SimpleMailMessage message = new SimpleMailMessage();
-        message.setFrom(fromName + " <" + fromAddress + ">");
-        message.setTo(to);
-        message.setSubject("Verify your email — Oyan Platform");
-        message.setText(
-                "Hello!\n\n" +
-                "Please verify your email address by clicking the link below:\n\n" +
-                link + "\n\n" +
-                "The link expires in 24 hours.\n\n" +
-                "If you did not register on Oyan Platform, you can ignore this email."
-        );
-
+    private void send(String toEmail, String subject, String html) {
+        Resend resend = new Resend(apiKey);
+        CreateEmailOptions request = CreateEmailOptions.builder()
+                .from(fromName + " <" + fromAddress + ">")
+                .to(List.of(toEmail))
+                .subject(subject)
+                .html(html)
+                .build();
         try {
-            mailSender.send(message);
-            log.info("Verification email sent to {}", to);
-        } catch (MailException ex) {
-            log.error("Failed to send verification email to {}: {}", to, ex.getMessage());
-            throw ex;
+            resend.emails().send(request);
+        } catch (ResendException e) {
+            throw new RuntimeException("Failed to send email to " + toEmail, e);
         }
     }
-    public void sendPasswordResetEmail(String to, String token) {
-    String link = appBaseUrl + "/reset-password?token=" + token;
-
-    SimpleMailMessage message = new SimpleMailMessage();
-    message.setFrom(fromName + " <" + fromAddress + ">");
-    message.setTo(to);
-    message.setSubject("Reset your password — Oyan Platform");
-    message.setText(
-            "Hello!\n\n" +
-            "You requested a password reset. Click the link below to set a new password:\n\n" +
-            link + "\n\n" +
-            "The link expires in 1 hour.\n\n" +
-            "If you did not request a password reset, you can ignore this email."
-    );
-
-    try {
-        mailSender.send(message);
-        log.info("Password reset email sent to {}", to);
-    } catch (MailException ex) {
-        log.error("Failed to send password reset email to {}: {}", to, ex.getMessage());
-        throw ex;
-    }
-}
 }
