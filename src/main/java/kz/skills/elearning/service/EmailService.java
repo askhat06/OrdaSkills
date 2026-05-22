@@ -21,10 +21,13 @@ public class EmailService {
     private String fromName;
 
     @Value("${app.email.base-url:http://localhost:5173}")
-    private String baseUrl;
+    private String frontendUrl;
+
+    @Value("${app.email.api-url:http://localhost:7777}")
+    private String apiUrl;
 
     public void sendVerificationEmail(String toEmail, String token) {
-        String link = baseUrl + "/api/auth/verify?token=" + token;
+        String link = apiUrl + "/api/auth/verify?token=" + token;
         send(toEmail,
                 "Подтвердите ваш email — Oyan",
                 """
@@ -39,7 +42,7 @@ public class EmailService {
     }
 
     public void sendPasswordResetEmail(String toEmail, String token) {
-        String link = baseUrl + "/reset-password?token=" + token;
+        String link = frontendUrl + "/reset-password?token=" + token;
         send(toEmail,
                 "Сброс пароля — Oyan",
                 """

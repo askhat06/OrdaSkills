@@ -38,6 +38,7 @@ app:
   email:
     verification-enabled: true
     base-url: ${APP_BASE_URL:http://localhost:5173}
+    api-url: ${APP_API_URL:http://localhost:7777}
     from-address: ${MAIL_FROM_ADDRESS:noreply@oyan.ink}
     from-name: ${MAIL_FROM_NAME:Oyan Platform}
     token-expiry-hours: ${EMAIL_TOKEN_EXPIRY:24}
