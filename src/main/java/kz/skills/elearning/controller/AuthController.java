@@ -11,6 +11,8 @@ import kz.skills.elearning.dto.UpdateProfileRequest;
 import kz.skills.elearning.security.PlatformUserPrincipal;
 import kz.skills.elearning.service.AuthService;
 import jakarta.validation.Valid;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -28,6 +30,9 @@ public class AuthController {
 
     private final AuthService authService;
 
+    @Value("${app.email.base-url:http://localhost:5173}")
+    private String frontendUrl;
+
     public AuthController(AuthService authService) {
         this.authService = authService;
     }
@@ -43,8 +48,17 @@ public class AuthController {
     }
 
     @GetMapping("/verify")
-    public ResponseEntity<AuthResponse> verify(@RequestParam String token) {
-        return ResponseEntity.ok(authService.verifyEmail(token));
+    public ResponseEntity<Void> verify(@RequestParam String token) {
+        try {
+            authService.verifyEmail(token);
+            return ResponseEntity.status(HttpStatus.FOUND)
+                    .header(HttpHeaders.LOCATION, frontendUrl + "/login?verified=true")
+                    .build();
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.FOUND)
+                    .header(HttpHeaders.LOCATION, frontendUrl + "/login?error=invalid-token")
+                    .build();
+        }
     }
 
     @PostMapping("/login")

@@ -24,7 +24,7 @@ public class EmailService {
     private String baseUrl;
 
     public void sendVerificationEmail(String toEmail, String token) {
-        String link = baseUrl + "/api/auth/verify-email?token=" + token;
+        String link = baseUrl + "/api/auth/verify?token=" + token;
         send(toEmail,
                 "Подтвердите ваш email — Oyan",
                 """
