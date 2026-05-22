@@ -11,7 +11,7 @@ import java.util.List;
 @Service
 public class EmailService {
 
-    @Value("${RESEND_API_KEY}")
+    @Value("${RESEND_API_KEY:}")
     private String apiKey;
 
     @Value("${app.email.from-address}")
