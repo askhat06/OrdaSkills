@@ -13,7 +13,7 @@ public final class PaymentCalculator {
             throw new IllegalArgumentException("Invalid price or quantity");
         }
 
-        // Учебная ошибка: количество товаров не учитывается.
-        return unitPrice;
+        return unitPrice.multiply(BigDecimal.valueOf(quantity));// Учебная ошибка: количество товаров не учитывается.
+
     }
 }
