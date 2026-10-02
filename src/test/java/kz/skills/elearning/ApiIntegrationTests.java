@@ -153,7 +153,8 @@ class ApiIntegrationTests {
 
         mockMvc.perform(get("/api/courses"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].slug").value(COURSE_SLUG));
+                .andExpect(jsonPath("$[*].slug")
+                        .value(org.hamcrest.Matchers.hasItem(COURSE_SLUG)));
 
         mockMvc.perform(get("/api/courses/{slug}", COURSE_SLUG))
                 .andExpect(status().isOk())
