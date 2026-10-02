@@ -1,0 +1,2 @@
+Payment amounts use BigDecimal.
+Total equals unit price multiplied by quantity.
